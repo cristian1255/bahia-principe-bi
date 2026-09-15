@@ -1,0 +1,31 @@
+name: Actualizar datos BI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */3 * * *"
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar ETL contra PostgreSQL compartido
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ETL_SOURCE_URL: ${{ secrets.ETL_SOURCE_URL }}
+          ETL_SOURCE_TOKEN: ${{ secrets.ETL_SOURCE_TOKEN }}
+          ETL_SOURCE_FORMAT: ${{ vars.ETL_SOURCE_FORMAT }}
+        run: python scripts/run_etl_cloud.py

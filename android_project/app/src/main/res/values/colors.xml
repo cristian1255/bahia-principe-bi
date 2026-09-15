@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="bahia_green">#FF006B3F</color>
+    <color name="bahia_navy">#FF0E3A66</color>
+    <color name="bahia_gold">#FFD4AF37</color>
+    <color name="bahia_cream">#FFF3EFE5</color>
+</resources>

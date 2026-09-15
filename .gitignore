@@ -1,0 +1,53 @@
+# Entornos virtuales y dependencias
+.venv/
+env/
+venv/
+ENV/
+
+# Variables de entorno y credenciales
+.env
+.env.*
+!.env.example
+
+# Datos binarios y reservas Excel / CSV
+*.xlsx
+*.csv
+datos reservas*.xlsx
+sample_reservas.*
+
+# Archivos de memoria / heap dumps
+*.hprof
+java_pid*.hprof
+
+# Bytecode de Python y caché
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Bases de datos locales
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Android / Gradle build artifacts
+android_project/.gradle/
+android_project/build/
+android_project/app/build/
+android_project/local.properties
+android_project/.idea/
+android_project/*.hprof
+.gradle/
+build/
+app/build/
+
+# IDE y OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
