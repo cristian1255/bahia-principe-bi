@@ -19,8 +19,6 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sqlalchemy import text
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, r2_score
 
 from config_db import (
     get_engine,
@@ -84,71 +82,128 @@ st.set_page_config(
 # Inyección de estilos CSS elegantes con temática Bahía Príncipe
 st.markdown("""
 <style>
-    /* Estilos generales y tipografía */
+    :root {
+        --ink: #12233f;
+        --muted: #627089;
+        --blue: #1464d2;
+        --blue-soft: #eaf2ff;
+        --green: #13a678;
+        --gold: #e5a52b;
+        --line: #dce5f2;
+        --surface: #ffffff;
+    }
+
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-    
+
     html, body, [class*="css"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
-    /* Encabezados y tarjetas */
-    .metric-card {
-        background: linear-gradient(135deg, #13223D 0%, #0F1B30 100%);
-        border: 1px solid rgba(197, 160, 89, 0.25);
-        border-radius: 12px;
-        padding: 18px 20px;
-        color: #F8FAFC;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
-        transition: transform 0.2s ease, border-color 0.2s ease;
+
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(180deg, #f5f8fd 0%, #eef3fa 100%);
+        color: var(--ink);
     }
-    .metric-card:hover {
-        transform: translateY(-2px);
-        border-color: rgba(197, 160, 89, 0.6);
+    [data-testid="stHeader"] { background: rgba(245, 248, 253, 0.92); }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #10254b 0%, #172f5d 100%);
+        color: #ffffff;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] label { color: #dfe9f8; }
+    h1, h2, h3, h4 { color: var(--ink); letter-spacing: 0; }
+    .block-container { max-width: 1500px; padding-top: 1.5rem; }
+
+    .metric-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px 18px;
+        color: var(--ink);
+        box-shadow: 0 8px 24px rgba(33, 63, 107, 0.08);
+        min-height: 112px;
     }
     .metric-title {
         font-size: 0.82rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: #94A3B8;
+        color: var(--muted);
         margin-bottom: 6px;
         font-weight: 600;
     }
     .metric-value {
         font-size: 1.85rem;
         font-weight: 800;
-        color: #FFFFFF;
+        color: var(--ink);
         line-height: 1.1;
     }
     .metric-sub {
         font-size: 0.78rem;
         margin-top: 6px;
-        color: #C5A059;
+        color: var(--blue);
         font-weight: 500;
+    }
+
+    .executive-hero {
+        background: linear-gradient(115deg, #102b5b 0%, #176bd1 68%, #16a678 130%);
+        color: #ffffff;
+        border-radius: 12px;
+        padding: 24px 28px;
+        margin: 0 0 22px;
+        box-shadow: 0 12px 30px rgba(24, 65, 125, 0.2);
+    }
+    .executive-hero h1, .executive-hero p, .executive-hero span { color: #ffffff; }
+    .executive-hero h1 { margin: 0; font-size: 1.8rem; }
+    .executive-hero p { margin: 6px 0 0; opacity: 0.86; }
+    .section-note {
+        background: var(--blue-soft);
+        border-left: 4px solid var(--blue);
+        border-radius: 6px;
+        color: #294568;
+        padding: 10px 14px;
+        margin: 8px 0 16px;
+        font-size: 0.86rem;
+    }
+    .decision-card {
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 14px 16px;
+        min-height: 120px;
+        box-shadow: 0 6px 18px rgba(33, 63, 107, 0.06);
+    }
+    .decision-card strong { color: var(--ink); }
+    .decision-card p { color: var(--muted); font-size: 0.84rem; margin: 6px 0 0; }
+    .report-band {
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 18px 20px;
+        margin: 12px 0;
     }
     
     /* Badges de semáforo de ocupación */
     .badge-ok {
-        background-color: rgba(16, 185, 129, 0.18);
-        color: #34D399;
-        border: 1px solid #10B981;
+        background-color: #e8f8f2;
+        color: #087c5c;
+        border: 1px solid #43c59e;
         padding: 4px 10px;
         border-radius: 20px;
         font-size: 0.75rem;
         font-weight: 700;
     }
     .badge-warning {
-        background-color: rgba(245, 158, 11, 0.18);
-        color: #FBBF24;
-        border: 1px solid #F59E0B;
+        background-color: #fff5df;
+        color: #986400;
+        border: 1px solid #e5a52b;
         padding: 4px 10px;
         border-radius: 20px;
         font-size: 0.75rem;
         font-weight: 700;
     }
     .badge-danger {
-        background-color: rgba(239, 68, 68, 0.18);
-        color: #F87171;
-        border: 1px solid #EF4444;
+        background-color: #ffebed;
+        color: #a82f3d;
+        border: 1px solid #e5747e;
         padding: 4px 10px;
         border-radius: 20px;
         font-size: 0.75rem;
@@ -213,6 +268,33 @@ def cargar_dataset_completo() -> pd.DataFrame:
     Normaliza y enriquece los datos para alimentar los gráficos interactivos de Plotly.
     """
     from database import engine, init_db as init_pg_db
+
+    # El esquema estrella es la fuente histórica del ETL y conserva la granularidad diaria.
+    try:
+        engine_star = get_engine()
+        query_star = """
+        SELECT f.id_reserva, f.id_fecha, t.anio, t.mes, t.dia, t.dia_semana, t.es_fin_de_semana, t.temporada,
+               f.id_restaurante, r.nombre_restaurante, r.especialidad, r.capacidad_maxima_pax,
+               h_ub.codigo_origen AS cod_hotel_restaurante, h_ub.nombre_hotel AS hotel_restaurante,
+               h_hosp.codigo_origen AS cod_hotel_hospedaje, h_hosp.nombre_hotel AS hotel_hospedaje,
+               hor.turno, hor.horario_texto, hor.franja_horaria, ta.categoria_atencion, ta.prioridad_servicio,
+               f.num_adultos, f.num_ninos, f.num_bebes, f.total_pax, f.habs_invitadas,
+               f.es_cross_dining, f.requiere_periquera, f.observaciones_limpias
+        FROM "Fact_Reservas_Restaurantes" f
+        INNER JOIN "Dim_Tiempo" t ON f.id_fecha = t.id_fecha
+        INNER JOIN "Dim_Restaurante" r ON f.id_restaurante = r.id_restaurante
+        INNER JOIN "Dim_Hotel" h_ub ON r.id_hotel_ubicacion = h_ub.id_hotel
+        INNER JOIN "Dim_Hotel" h_hosp ON f.id_hotel_hospedaje = h_hosp.id_hotel
+        INNER JOIN "Dim_Horario" hor ON f.id_horario = hor.id_horario
+        INNER JOIN "Dim_Tipo_Atencion" ta ON f.id_tipo_atencion = ta.id_tipo_atencion
+        """
+        df_star = pd.read_sql(text(query_star), con=engine_star)
+        if not df_star.empty:
+            df_star["id_fecha"] = pd.to_datetime(df_star["id_fecha"]).dt.date
+            return df_star
+    except Exception as e:
+        st.warning(f"Aviso al consultar el histórico del esquema estrella: {e}")
+
     init_pg_db()
 
     try:
@@ -290,13 +372,13 @@ def cargar_dataset_completo() -> pd.DataFrame:
                hor.turno, hor.horario_texto, hor.franja_horaria, ta.categoria_atencion, ta.prioridad_servicio,
                f.num_adultos, f.num_ninos, f.num_bebes, f.total_pax, f.habs_invitadas,
                f.es_cross_dining, f.requiere_periquera, f.observaciones_limpias
-        FROM Fact_Reservas_Restaurantes f
-        INNER JOIN Dim_Tiempo t ON f.id_fecha = t.id_fecha
-        INNER JOIN Dim_Restaurante r ON f.id_restaurante = r.id_restaurante
-        INNER JOIN Dim_Hotel h_ub ON r.id_hotel_ubicacion = h_ub.id_hotel
-        INNER JOIN Dim_Hotel h_hosp ON f.id_hotel_hospedaje = h_hosp.id_hotel
-        INNER JOIN Dim_Horario hor ON f.id_horario = hor.id_horario
-        INNER JOIN Dim_Tipo_Atencion ta ON f.id_tipo_atencion = ta.id_tipo_atencion
+        FROM "Fact_Reservas_Restaurantes" f
+        INNER JOIN "Dim_Tiempo" t ON f.id_fecha = t.id_fecha
+        INNER JOIN "Dim_Restaurante" r ON f.id_restaurante = r.id_restaurante
+        INNER JOIN "Dim_Hotel" h_ub ON r.id_hotel_ubicacion = h_ub.id_hotel
+        INNER JOIN "Dim_Hotel" h_hosp ON f.id_hotel_hospedaje = h_hosp.id_hotel
+        INNER JOIN "Dim_Horario" hor ON f.id_horario = hor.id_horario
+        INNER JOIN "Dim_Tipo_Atencion" ta ON f.id_tipo_atencion = ta.id_tipo_atencion
         """
         df_star = pd.read_sql(text(query_star), con=engine_star)
         if not df_star.empty:
@@ -317,17 +399,10 @@ def cargar_demo_habitaciones() -> pd.DataFrame:
 
 
 def asegurar_base_datos_inicializada():
-    """Verifica si PostgreSQL Local tiene datos; si no, ejecuta el pipeline ETL automáticamente."""
+    """Verifica si hay datos y deja la carga anual bajo control del usuario."""
     df = cargar_dataset_completo()
     if df.empty:
-        with st.spinner("Cargando reservas reales en PostgreSQL Local vía ETL..."):
-            try:
-                from etl.etl_pipeline import run_etl
-                run_etl()
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error ejecutando ETL inicial: {e}")
+        st.info("Base de datos vacía. Sube el archivo histórico anual desde la barra lateral para comenzar.")
 
 
 # Asegurar que la BD esté lista
@@ -359,23 +434,30 @@ with st.sidebar:
     )
 
     if archivo_subido is not None:
+        reemplazar_datos = st.checkbox(
+            "Reemplazar todos los datos actuales con este archivo",
+            value=True,
+            help="Úsalo cuando el archivo contiene el histórico completo de un año.",
+        )
         if st.button("⚡ Procesar y Cargar a BD", use_container_width=True, type="primary"):
             with st.spinner("Ejecutando pipeline ETL hacia PostgreSQL Local..."):
                 try:
-                    from etl.etl_pipeline import transformar_datos, cargar_a_postgresql
-                    if archivo_subido.name.endswith(".csv"):
-                        df_raw = pd.read_csv(archivo_subido)
-                    else:
-                        df_raw = pd.read_excel(archivo_subido, engine="openpyxl")
-                    df_clean = transformar_datos(df_raw)
-                    cargar_a_postgresql(df_clean)
-                    st.success(f"✅ ¡ETL Exitoso! {len(df_clean)} reservas cargadas en PostgreSQL Local.")
+                    from etl_pipeline import ejecutar_etl_desde_archivo
+                    resumen = ejecutar_etl_desde_archivo(
+                        archivo_subido,
+                        es_csv=archivo_subido.name.lower().endswith(".csv"),
+                        reemplazar=reemplazar_datos,
+                    )
+                    st.success(
+                        f"✅ Histórico cargado: {resumen['registros_cargados_bd']} reservas, "
+                        f"{resumen['fechas_unicas']} días entre {resumen['fecha_min']} y {resumen['fecha_max']}."
+                    )
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error en el ETL: {e}")
 
-    col_btn1, col_btn2 = st.columns(2)
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
     with col_btn1:
         if st.button("🔄 Recargar Demo", use_container_width=True, help="Regenera 1,250 reservas sintéticas en la base de datos"):
             with st.spinner("Regenerando datos sintéticos..."):
@@ -385,6 +467,13 @@ with st.sidebar:
     with col_btn2:
         if st.button("🧹 Limpiar Caché", use_container_width=True):
             st.cache_data.clear()
+            st.rerun()
+    with col_btn3:
+        if st.button("🗑️ Vaciar BD", use_container_width=True):
+            from etl_pipeline import limpiar_base_datos
+            limpiar_base_datos()
+            st.cache_data.clear()
+            st.success("Base vaciada. Ya puedes subir el histórico anual.")
             st.rerun()
 
     # Estado de la Base de Datos
@@ -503,14 +592,15 @@ if not df_filtrado.empty:
 # =====================================================================
 
 st.markdown(f"""
-    <div class="brand-header">
-        <div class="brand-subtitle">Complejo Riviera Maya & Punta Cana • 5 Hoteles • 20 Restaurantes de Especialidad</div>
-        <h1 class="brand-title">Sistema Analítico Operativo y Predictivo de Reservas A&B</h1>
-        <div style="display: flex; gap: 18px; margin-top: 10px; font-size: 0.82rem; color: #CBD5E1;">
-            <div>📅 Periodo: <strong style="color: #C5A059;">{f_inicio}</strong> al <strong style="color: #C5A059;">{f_fin}</strong></div>
-            <div>🏨 Hoteles activos: <strong style="color: #38BDF8;">{len(hoteles_sel)}/5</strong></div>
-            <div>🍽️ Restaurantes activos: <strong style="color: #38BDF8;">{len(restaurantes_sel)}/20</strong></div>
-            <div>📊 Muestra analizada: <strong style="color: #34D399;">{len(df_filtrado):,} reservas</strong></div>
+    <div class="executive-hero">
+        <span style="font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em;">BAHÍA PRÍNCIPE • BUSINESS INTELLIGENCE A&B</span>
+        <h1>Centro Ejecutivo de Demanda y Operación</h1>
+        <p>Convertimos reservas históricas en decisiones: capacidad, personal, servicio y previsión de demanda.</p>
+        <div style="display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; font-size: 0.82rem;">
+            <span>📅 {f_inicio} → {f_fin}</span>
+            <span>🏨 {len(hoteles_sel)}/5 hoteles activos</span>
+            <span>🍽️ {len(restaurantes_sel)}/20 restaurantes activos</span>
+            <span>📊 {len(df_filtrado):,} reservas analizadas</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -611,6 +701,17 @@ with tabs[0]:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
+        st.markdown("""
+            <div class="section-note"><strong>Qué buscamos:</strong> detectar dónde se concentra la demanda, anticipar saturaciones y convertir los datos en acciones concretas para Dirección de A&B.</div>
+        """, unsafe_allow_html=True)
+        d1, d2, d3 = st.columns(3)
+        with d1:
+            st.markdown("<div class='decision-card'><strong>🔎 Diagnóstico</strong><p>Identifica hoteles, restaurantes y turnos con mayor presión operativa.</p></div>", unsafe_allow_html=True)
+        with d2:
+            st.markdown("<div class='decision-card'><strong>🧠 Predicción</strong><p>Entrena una red neuronal con la historia diaria para anticipar la demanda.</p></div>", unsafe_allow_html=True)
+        with d3:
+            st.markdown("<div class='decision-card'><strong>✅ Acción</strong><p>Recomienda ajustes de mesas, personal, turnos y capacidad antes del pico.</p></div>", unsafe_allow_html=True)
+
         # Fila 2: Semáforo Visual de Ocupación por Restaurante
         st.subheader("🚦 Semáforo de Ocupación por Restaurante de Especialidad")
         st.caption("Mide el porcentaje de comensales promedio por noche frente a la capacidad instalada del restaurante.")
@@ -701,6 +802,7 @@ with tabs[0]:
                 height=380
             )
             st.plotly_chart(fig_trend, use_container_width=True)
+            st.markdown("<div class='section-note'><strong>Cómo leerla:</strong> las barras muestran comensales por día y la línea muestra reservas. Picos simultáneos indican necesidad de reforzar capacidad y personal.</div>", unsafe_allow_html=True)
 
         with g2:
             st.subheader("🥧 Distribución de Demanda por Hotel")
@@ -720,6 +822,7 @@ with tabs[0]:
                 legend=dict(orientation="v", yanchor="middle", y=0.5)
             )
             st.plotly_chart(fig_pie, use_container_width=True)
+            st.markdown("<div class='section-note'><strong>Resultado:</strong> permite localizar qué hoteles concentran el consumo y dónde conviene redistribuir promociones, mesas o recursos.</div>", unsafe_allow_html=True)
 
 
 # =====================================================================
@@ -731,6 +834,7 @@ with tabs[1]:
     else:
         st.subheader("⏰ Mapa de Calor de Ocupación por Turno y Restaurante")
         st.caption("Permite a la Dirección de A&B balancear las cargas horarias y mitigar sobreventas en franjas pico.")
+        st.markdown("<div class='section-note'><strong>Qué buscamos:</strong> encontrar la combinación restaurante-turno que concentra la demanda. Los colores intensos requieren redistribución de reservas, mesas o personal.</div>", unsafe_allow_html=True)
 
         # Pivot table: Restaurante vs Turno
         pivot_ocup = df_filtrado.pivot_table(
@@ -851,6 +955,7 @@ with tabs[2]:
     else:
         st.subheader("👑 Segmentación de Clientes: VIPs, Fidelidad y Perfil Familiar")
         st.caption("Permite anticipar servicios especiales, atenciones protocolares y requerimientos de montaje infantil.")
+        st.markdown("<div class='section-note'><strong>Cómo funciona:</strong> clasifica las reservas por atención, tamaño familiar y necesidades especiales para que el maître prepare el servicio antes de la llegada.</div>", unsafe_allow_html=True)
 
         col_seg1, col_seg2 = st.columns([1, 1.4])
 
@@ -951,6 +1056,7 @@ with tabs[3]:
     else:
         st.subheader("🏨 Análisis de Flujo Inter-Hotel (Cross-Dining Experience)")
         st.caption("Rastrea el intercambio de comensales entre hoteles: desde el hotel donde se hospeda el huésped hasta el hotel donde cena.")
+        st.markdown("<div class='section-note'><strong>Resultado esperado:</strong> medir el valor del cross-dining y localizar restaurantes imán para coordinar transporte, reservas y capacidad entre hoteles.</div>", unsafe_allow_html=True)
 
         # Matriz de flujo: Hotel Hospedaje -> Hotel Restaurante
         df_flujo = df_filtrado.groupby(["cod_hotel_hospedaje", "cod_hotel_restaurante", "hotel_hospedaje", "hotel_restaurante"]).agg(
@@ -1054,126 +1160,68 @@ with tabs[3]:
 # TAB 5: MODELO PREDICTIVO Y SIMULADOR DE DEMANDA
 # =====================================================================
 with tabs[4]:
-    st.subheader("🤖 Modelo Predictivo de Demanda de Comensales (Scikit-Learn)")
-    st.caption("Entrena un algoritmo de Machine Learning sobre los datos históricos y proyecta la afluencia de comensales.")
+    st.subheader("🧠 Pronóstico Ejecutivo con Red Neuronal")
+    st.caption("Entrenamiento temporal por restaurante y turno, con predicción diaria para días, meses y años.")
+    st.markdown("<div class='section-note'><strong>Cómo funciona:</strong> la red aprende estacionalidad, tendencia y comportamiento de los últimos 7, 14 y 28 días. Se valida con fechas posteriores al entrenamiento para medir su capacidad real.</div>", unsafe_allow_html=True)
 
     if len(df_master) < 50:
-        st.warning("Se requieren al menos 50 reservas en la base de datos para entrenar el modelo predictivo.")
+        st.warning("Se requieren al menos 50 reservas históricas para entrenar el modelo predictivo.")
     else:
-        # Preparación de datos para entrenamiento de Machine Learning
-        # Agrupar por fecha, restaurante y turno
-        df_ml_base = df_master.groupby(["id_fecha", "id_restaurante", "turno"]).agg(
-            pax_dia_turno=("total_pax", "sum"),
-            reservas_dia_turno=("id_reserva", "count"),
-            adultos=("num_adultos", "sum"),
-            menores=("num_ninos", "sum"),
-            anio=("anio", "first"),
-            mes=("mes", "first"),
-            dia=("dia", "first"),
-            dia_semana=("dia_semana", "first"),
-            es_fin_de_semana=("es_fin_de_semana", "first"),
-            capacidad=("capacidad_maxima_pax", "first")
-        ).reset_index()
+        from forecast_model import forecast_future, save_forecast_model, train_neural_forecast
 
-        if df_ml_base.empty:
-            st.warning("No hay datos agregados suficientes para construir el modelo predictivo.")
-        else:
-            # Feature Engineering: Encoding categórico
-            dias_map = {"Lunes": 1, "Martes": 2, "Miércoles": 3, "Jueves": 4, "Viernes": 5, "Sábado": 6, "Domingo": 7}
-            df_ml_base["dia_num"] = df_ml_base["dia_semana"].map(dias_map).fillna(1)
-            df_ml_base["es_fds_num"] = df_ml_base["es_fin_de_semana"].astype(int)
+        horizon_label = st.selectbox(
+            "Horizonte de planificación",
+            options=["7 días", "30 días", "90 días", "6 meses", "1 año", "2 años", "5 años"],
+            index=2,
+        )
+        horizon_days = {"7 días": 7, "30 días": 30, "90 días": 90, "6 meses": 182, "1 año": 365, "2 años": 730, "5 años": 1825}[horizon_label]
 
-            # Mapeo numérico de restaurante
-            rest_cat = {rid: i for i, rid in enumerate(df_ml_base["id_restaurante"].unique())}
-            df_ml_base["rest_encoded"] = df_ml_base["id_restaurante"].map(rest_cat)
+        with st.spinner("Entrenando red neuronal y calculando validación temporal..."):
+            try:
+                resultado_red = train_neural_forecast(df_master)
+                save_forecast_model(resultado_red)
+                df_futuro = forecast_future(resultado_red, horizon_days)
+            except ValueError as error:
+                st.error(str(error))
+                df_futuro = pd.DataFrame()
 
-            features = ["mes", "dia_num", "es_fds_num", "turno", "capacidad", "rest_encoded"]
-            target = "pax_dia_turno"
+        if not df_futuro.empty:
+            metric_1, metric_2, metric_3, metric_4 = st.columns(4)
+            metric_1.metric("Modelo", "MLP neuronal")
+            metric_2.metric("Error MAE validación", f"{resultado_red.metrics['mae']:.1f} pax")
+            metric_3.metric("Error RMSE validación", f"{resultado_red.metrics['rmse']:.1f} pax")
+            metric_4.metric("Horizonte", horizon_label)
 
-            X = df_ml_base[features]
-            y = df_ml_base[target]
+            st.markdown("#### 📈 Demanda diaria prevista")
+            df_proj_dia = df_futuro.groupby("fecha", as_index=False)["pax_predichos"].sum()
+            df_hist_14 = df_master.groupby("id_fecha", as_index=False)["total_pax"].sum().tail(14)
+            fig_proj = go.Figure()
+            fig_proj.add_trace(go.Scatter(x=df_hist_14["id_fecha"], y=df_hist_14["total_pax"], mode="lines+markers", name="Histórico real", line=dict(color="#38BDF8", width=3)))
+            fig_proj.add_trace(go.Scatter(x=df_proj_dia["fecha"], y=df_proj_dia["pax_predichos"], mode="lines", name="Pronóstico neuronal", line=dict(color="#C5A059", width=2)))
+            fig_proj.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#F8FAFC"), yaxis_title="Comensales por día", height=360)
+            st.plotly_chart(fig_proj, use_container_width=True)
+            st.markdown("<div class='section-note'><strong>Cómo usar el resultado:</strong> selecciona el horizonte de planificación y usa los picos diarios para anticipar compras, horarios, mesas y dotación de sala/cocina.</div>", unsafe_allow_html=True)
 
-            if X.empty or y.empty or len(X) < 2:
-                st.warning("La base histórica tiene demasiados pocos registros para entrenar un modelo fiable.")
-            else:
-                # Entrenar RandomForestRegressor
-                modelo = RandomForestRegressor(n_estimators=100, random_state=42, max_depth=8)
-                modelo.fit(X, y)
-                y_pred = modelo.predict(X)
+            st.markdown("#### 📊 Resumen ejecutivo mensual")
+            resumen_mensual = df_futuro.groupby("mes", as_index=False).agg(
+                pax_previstos=("pax_predichos", "sum"),
+                promedio_diario=("pax_predichos", "mean"),
+                pico_diario=("pax_predichos", "max"),
+            )
+            resumen_mensual[["pax_previstos", "promedio_diario", "pico_diario"]] = resumen_mensual[["pax_previstos", "promedio_diario", "pico_diario"]].round(1)
+            st.dataframe(resumen_mensual, use_container_width=True, hide_index=True)
+            st.download_button(
+                "⬇️ Descargar pronóstico completo (CSV)",
+                data=df_futuro.to_csv(index=False).encode("utf-8"),
+                file_name=f"pronostico_demanda_{horizon_days}_dias.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
-                r2 = r2_score(y, y_pred)
-                mae = mean_absolute_error(y, y_pred)
-
-                m_col1, m_col2, m_col3 = st.columns(3)
-                with m_col1:
-                    st.metric("Algoritmo de ML", "Random Forest Regressor")
-                with m_col2:
-                    st.metric("Precisión del Modelo (R²)", f"{round(r2 * 100, 1)}%")
-                with m_col3:
-                    st.metric("Error Medio Absoluto (MAE)", f"{round(mae, 1)} pax / turno")
-
-                # Proyección futura a 7 días
-                st.markdown("#### 📅 Proyección de Demanda para los Próximos 7 Días")
-                fecha_max_hist = df_master["id_fecha"].max()
-                fechas_futuras = [fecha_max_hist + timedelta(days=i) for i in range(1, 8)]
-
-                registros_futuros = []
-                for f_fut in fechas_futuras:
-                    d_num = dias_map.get(f_fut.strftime("%A"), f_fut.weekday() + 1)
-                    es_fds = 1 if f_fut.weekday() in [4, 5, 6] else 0
-                    for r_id, r_idx in rest_cat.items():
-                        cap = df_ml_base[df_ml_base["id_restaurante"] == r_id]["capacidad"].iloc[0]
-                        for t in [1, 2, 3]:
-                            registros_futuros.append({
-                                "id_fecha": f_fut,
-                                "id_restaurante": r_id,
-                                "mes": f_fut.month,
-                                "dia_num": d_num,
-                                "es_fds_num": es_fds,
-                                "turno": t,
-                                "capacidad": cap,
-                                "rest_encoded": r_idx
-                            })
-
-                df_futuro = pd.DataFrame(registros_futuros)
-                if not df_futuro.empty:
-                    df_futuro["pax_predicho"] = modelo.predict(df_futuro[features]).round(0).astype(int)
-
-                    # Agrupar proyección por fecha
-                    df_proj_dia = df_futuro.groupby("id_fecha")["pax_predicho"].sum().reset_index()
-
-                    fig_proj = go.Figure()
-                    # Histórico últimos 14 días
-                    df_hist_14 = df_master.groupby("id_fecha")["total_pax"].sum().reset_index().tail(14)
-                    fig_proj.add_trace(go.Scatter(
-                        x=df_hist_14["id_fecha"],
-                        y=df_hist_14["total_pax"],
-                        mode="lines+markers",
-                        name="Histórico Real",
-                        line=dict(color="#38BDF8", width=3)
-                    ))
-                    fig_proj.add_trace(go.Scatter(
-                        x=df_proj_dia["id_fecha"],
-                        y=df_proj_dia["pax_predicho"],
-                        mode="lines+markers",
-                        name="Proyección ML (7 días)",
-                        line=dict(color="#C5A059", width=3, dash="dash")
-                    ))
-                    fig_proj.update_layout(
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="#F8FAFC"),
-                        yaxis=dict(title="Comensales Totales", gridcolor="rgba(255,255,255,0.08)"),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                        margin=dict(l=30, r=30, t=30, b=30),
-                        height=320
-                    )
-                    st.plotly_chart(fig_proj, use_container_width=True)
-
-                st.markdown("---")
-                # SIMULADOR DE CAPACIDAD Y PERSONAL (STAFFING & OPERATIONAL SIMULATOR)
-                st.subheader("🧮 Simulador Interactivo de Capacidad y Dotación de Personal (A&B)")
-                st.caption("Calcula en tiempo real las necesidades de meseros, cocineros y costos operativos en base a la ocupación proyectada:")
+            st.markdown("---")
+            # SIMULADOR DE CAPACIDAD Y PERSONAL (STAFFING & OPERATIONAL SIMULATOR)
+            st.subheader("🧮 Simulador Interactivo de Capacidad y Dotación de Personal (A&B)")
+            st.caption("Calcula en tiempo real las necesidades de meseros, cocineros y costos operativos en base a la ocupación proyectada:")
 
         s_col1, s_col2 = st.columns([1, 1.2])
         with s_col1:
@@ -1287,6 +1335,81 @@ with tabs[5]:
 with tabs[6]:
     st.subheader("📥 Exportación Multiformato de Reportes Operativos")
     st.caption("Descarga la información procesada y limpia para análisis externo en Excel, CSV o reportes ejecutivos.")
+
+    report_total = len(df_filtrado)
+    report_pax = int(df_filtrado["total_pax"].sum()) if not df_filtrado.empty else 0
+    report_avg = round(report_pax / report_total, 2) if report_total else 0
+    report_cross = round(float(df_filtrado["es_cross_dining"].mean() * 100), 1) if not df_filtrado.empty else 0
+    report_top = "Pendiente de datos"
+    report_peak = "Pendiente de datos"
+    if not df_filtrado.empty:
+        report_top = str(df_filtrado.groupby("nombre_restaurante")["total_pax"].sum().idxmax())
+        daily_report = df_filtrado.groupby("id_fecha")["total_pax"].sum()
+        report_peak = f"{daily_report.idxmax()} ({int(daily_report.max()):,} pax)"
+
+    st.markdown("""
+        <div class="report-band">
+            <h3>📘 Informe de Dirección: propósito y decisiones</h3>
+            <p><strong>Qué buscamos hacer:</strong> construir una fuente única de inteligencia operativa para entender la demanda de restaurantes, anticipar la presión de servicio y mejorar la experiencia del huésped.</p>
+            <p><strong>Cómo funciona:</strong> el ETL limpia y anonimiza los archivos históricos, los organiza por fecha, hotel, restaurante, turno y tipo de atención; después las gráficas diagnostican el comportamiento y la red neuronal proyecta la demanda futura.</p>
+            <p><strong>Qué decisiones soporta:</strong> asignación de mesas, personal de sala y cocina, horarios de operación, coordinación cross-dining, preparación VIP/familiar y planificación de compras.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    report_cards = st.columns(4)
+    report_cards[0].metric("Reservas analizadas", f"{report_total:,}")
+    report_cards[1].metric("Comensales analizados", f"{report_pax:,}")
+    report_cards[2].metric("Pax promedio / reserva", f"{report_avg}")
+    report_cards[3].metric("Cross-dining", f"{report_cross}%")
+
+    st.markdown(f"""
+        <div class="report-band">
+            <h4>📌 Resultado actual</h4>
+            <p><strong>Restaurante con mayor demanda:</strong> {report_top}</p>
+            <p><strong>Pico diario detectado:</strong> {report_peak}</p>
+            <p><strong>Lectura ejecutiva:</strong> estos indicadores muestran el tamaño de la operación, el nivel de movilidad entre hoteles y el punto que debe priorizarse en la planificación.</p>
+        </div>
+        <div class="report-band">
+            <h4>🛠️ Problemas que resolvemos</h4>
+            <p>• Datos dispersos en archivos y formatos distintos: se normalizan en una base central.</p>
+            <p>• Decisiones reactivas ante picos: se identifican patrones diarios y se proyectan escenarios.</p>
+            <p>• Capacidad mal distribuida: se compara demanda contra restaurante, turno y hotel.</p>
+            <p>• Atención especial no anticipada: se detectan perfiles VIP, familias, bebés y cross-dining.</p>
+        </div>
+        <div class="report-band">
+            <h4>🚀 Optimizaciones y soluciones recomendadas</h4>
+            <p>1. Cargar al menos un año completo y reentrenar mensualmente para mejorar estacionalidad.</p>
+            <p>2. Reforzar personal y mise en place en los turnos con semáforo amarillo/rojo.</p>
+            <p>3. Redistribuir reservas entre restaurantes imán y restaurantes con capacidad ociosa.</p>
+            <p>4. Integrar ocupación hotelera, cancelaciones, no-shows, clima y eventos para aumentar precisión.</p>
+            <p>5. Usar el CSV pronosticado como agenda operativa y comparar predicción contra resultado real.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    reporte_direccion = f"""REPORTE EJECUTIVO BAHIA PRINCIPE
+Periodo: {f_inicio} a {f_fin}
+
+OBJETIVO
+Convertir reservas históricas en decisiones de capacidad, servicio y previsión de demanda.
+
+RESULTADOS
+Reservas analizadas: {report_total:,}
+Comensales analizados: {report_pax:,}
+Promedio pax/reserva: {report_avg}
+Cross-dining: {report_cross}%
+Restaurante líder: {report_top}
+Pico diario: {report_peak}
+
+SOLUCIONES
+- Centralizar y normalizar la información mediante ETL.
+- Detectar saturación por hotel, restaurante y turno.
+- Predecir demanda diaria con red neuronal temporal.
+- Optimizar mesas, personal, compras y coordinación cross-dining.
+
+SIGUIENTE PASO
+Cargar un año completo, entrenar el modelo y comparar cada predicción con el resultado real para mejorar continuamente.
+"""
+    st.download_button("📄 Descargar informe ejecutivo TXT", reporte_direccion, "informe_direccion_bahia_principe.txt", "text/plain", use_container_width=True)
 
     if df_filtrado.empty:
         st.warning("No hay datos filtrados para exportar.")

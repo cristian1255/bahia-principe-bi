@@ -34,7 +34,11 @@ powershell -NoProfile -Command "$ports = @(8000, 8501); foreach ($p in $ports) {
 echo [*] Entorno de ejecucion: %PYTHON_EXEC%
 echo.
 
-if /i not "%~1"=="/no-etl" (
+set "RUN_ETL=0"
+if /i "%~1"=="/with-etl" set "RUN_ETL=1"
+if /i "%~2"=="/with-etl" set "RUN_ETL=1"
+
+if "%RUN_ETL%"=="1" (
     echo [1/3] Ejecutando Pipeline ETL principal...
     "%PYTHON_EXEC%" "%~dp0etl_pipeline.py"
     if errorlevel 1 (
@@ -45,7 +49,7 @@ if /i not "%~1"=="/no-etl" (
     echo [+] ETL finalizado con exito.
     echo.
 ) else (
-    echo [1/3] ETL omitido por parametro /no-etl.
+    echo [1/3] ETL demo omitido. Sube el historico anual desde el dashboard.
     echo.
 )
 
@@ -56,7 +60,7 @@ echo [+] Servidor FastAPI ejecutandose en http://localhost:%PORT_BACKEND%
 echo.
 
 echo [3/3] Iniciando Dashboard Interactivo Streamlit (Puerto %PORT_STREAMLIT%)...
-start "Streamlit Bahia Principe BI" /D "%~dp0" cmd /k ""%PYTHON_EXEC% -m streamlit run "%~dp0app.py" --server.address 0.0.0.0 --server.port %PORT_STREAMLIT% --server.headless true"
+start "Streamlit Bahia Principe BI" /D "%~dp0" cmd /k ""%PYTHON_EXEC%" -m streamlit run "%~dp0app.py" --server.address 0.0.0.0 --server.port %PORT_STREAMLIT% --server.headless true"
 
 echo.
 echo ================================================================

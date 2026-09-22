@@ -24,6 +24,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+models/*.pkl
 .ruff_cache/
 .coverage
 htmlcov/

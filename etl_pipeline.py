@@ -23,7 +23,7 @@ import io
 
 import pandas as pd
 import numpy as np
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from config_db import (
@@ -549,7 +549,11 @@ def cargar_en_base_de_datos(df_transformado: pd.DataFrame, session: Session) -> 
     return len(fact_records)
 
 
-def ejecutar_etl_desde_archivo(archivo: Union[str, io.BytesIO], es_csv: Optional[bool] = None) -> Dict[str, Any]:
+def ejecutar_etl_desde_archivo(
+    archivo: Union[str, io.BytesIO],
+    es_csv: Optional[bool] = None,
+    reemplazar: bool = False,
+) -> Dict[str, Any]:
     """
     Función principal de ejecución del pipeline ETL desde un archivo subido (.xlsx o .csv).
     """
@@ -570,6 +574,9 @@ def ejecutar_etl_desde_archivo(archivo: Union[str, io.BytesIO], es_csv: Optional
     # 2. Transformación
     df_transformado, resumen = transformar_dataframe_transaccional(df_raw)
 
+    if reemplazar:
+        limpiar_base_datos()
+
     # 3. Carga en BD
     with get_db_session() as session:
         seed_dimensiones(session)
@@ -577,6 +584,22 @@ def ejecutar_etl_desde_archivo(archivo: Union[str, io.BytesIO], es_csv: Optional
         resumen["registros_cargados_bd"] = registros_cargados
 
     return resumen
+
+
+def limpiar_base_datos() -> None:
+    """Elimina todos los datos cargados y conserva las tablas para una nueva carga."""
+    engine = get_engine()
+    tables = inspect(engine).get_table_names()
+    managed_tables = [
+        "Fact_Reservas_Restaurantes", "Dim_Habitacion", "Dim_Tiempo", "Dim_Horario",
+        "Dim_Tipo_Atencion", "Dim_Restaurante", "Dim_Hotel", "reservas_servicios",
+        "usuarios", "turnos_horarios", "tipos_atencion", "servicios", "hoteles",
+    ]
+    existing = [table for table in managed_tables if table in tables]
+    if existing:
+        quoted = ", ".join(f'"{table}"' for table in existing)
+        with engine.begin() as connection:
+            connection.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
 
 
 # =====================================================================
