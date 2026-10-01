@@ -10,8 +10,12 @@ resuelve todas las FK y luego carga la tabla transaccional reservas_servicios.
 """
 
 import os
+import re
 import sys
-from datetime import datetime
+import hashlib
+import unicodedata
+from datetime import date, datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -20,18 +24,15 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from database import (
-    HOTEL_ID_MAP,
-    HOTEL_NAME_BY_ID,
-    Hotel,
-    Servicio,
-    TurnoHorario,
-    TipoAtencion,
-    Usuario,
-    SessionLocal,
+from config_db import (
+    DimAtencion,
+    DimHotel,
+    DimServicio,
+    DimTiempo,
+    FactReservasRestaurantes,
+    get_db_session,
+    get_engine,
     init_db,
-    ReservaServicio,
-    normalizar_texto,
 )
 
 
@@ -333,6 +334,259 @@ def run_etl():
     df_clean = transformar_datos(df_raw)
     cargar_a_postgresql(df_clean)
     mostrar_agregaciones_kpis(df_clean)
+
+
+_COLUMN_ALIASES = {
+    "id": "id",
+    "fecha servicio": "fecha_servicio",
+    "servicio": "servicio",
+    "turno": "turno",
+    "horario": "horario",
+    "adultos": "adultos",
+    "ninos": "ninos",
+    "bebes": "bebes",
+    "hotel": "hotel",
+    "hotel res": "hotel_res",
+    "atencion": "atencion",
+    "usuario": "usuario",
+    "origen": "origen",
+    "habitacion": "habitacion",
+    "titular": "titular",
+    "mesa": "mesa",
+    "cargado": "cargado",
+    "obs": "obs",
+    "cross": "cross_flag",
+    "remarks": "remarks",
+    "n habs invitadas": "num_habs_invitadas",
+    "no habs invitadas": "num_habs_invitadas",
+    "n habs invitada": "num_habs_invitadas",
+    "num habs invitadas": "num_habs_invitadas",
+    "habs invitadas": "num_habs_invitadas",
+    "actions": "actions",
+    "tarea": "tarea",
+}
+
+
+def _normalizar_encabezado(value: str) -> str:
+    value = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^a-zA-Z0-9]+", " ", value).strip().lower()
+    return re.sub(r"\s+", " ", value)
+
+
+def _limpiar_cadena(value):
+    if pd.isna(value) or value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    cleaned = re.sub(r"\s+", " ", str(value)).strip()
+    return cleaned or None
+
+
+def _a_bool(value) -> bool:
+    return str(value).strip().lower() in {"true", "1", "si", "sí", "yes", "y", "s"}
+
+
+def transformar_datos(df: pd.DataFrame, restaurante: str) -> pd.DataFrame:
+    """Limpia un CSV de reservas y prepara sus columnas para el modelo estrella."""
+    rename = {}
+    for column in df.columns:
+        normalized = _normalizar_encabezado(column)
+        if normalized in _COLUMN_ALIASES:
+            rename[column] = _COLUMN_ALIASES[normalized]
+    clean = df.rename(columns=rename).loc[:, lambda frame: ~frame.columns.duplicated()].copy()
+
+    required = [
+        "id", "fecha_servicio", "servicio", "turno", "horario", "adultos", "ninos", "bebes",
+        "hotel", "hotel_res", "atencion", "usuario", "origen", "habitacion", "titular", "mesa",
+        "cargado", "obs", "cross_flag", "remarks", "num_habs_invitadas",
+    ]
+    for column in required:
+        if column not in clean:
+            clean[column] = None
+
+    clean["id"] = pd.to_numeric(clean["id"], errors="coerce")
+    clean = clean.dropna(subset=["id"]).copy()
+    clean["id"] = clean["id"].astype("int64")
+    clean = clean.drop_duplicates(subset=["id"], keep="last")
+    clean["fecha_servicio"] = pd.to_datetime(
+        clean["fecha_servicio"], errors="coerce", format="mixed", dayfirst=True
+    ).dt.date
+    clean = clean.dropna(subset=["fecha_servicio"]).copy()
+
+    for column in ("adultos", "ninos", "bebes", "num_habs_invitadas"):
+        clean[column] = pd.to_numeric(clean[column], errors="coerce").fillna(0).clip(lower=0).astype(int)
+    clean["pax_total"] = clean["adultos"] + clean["ninos"] + clean["bebes"]
+    clean["turno"] = pd.to_numeric(clean["turno"], errors="coerce").fillna(1).astype(int)
+
+    text_columns = [
+        "servicio", "hotel", "hotel_res", "atencion", "usuario", "origen", "habitacion", "titular",
+        "mesa", "horario", "obs", "cross_flag", "remarks",
+    ]
+    for column in text_columns:
+        clean[column] = clean[column].map(_limpiar_cadena)
+    clean["cargado"] = clean["cargado"].map(_a_bool)
+    clean["restaurante"] = _limpiar_cadena(restaurante) or "Sin nombre"
+    return clean.reset_index(drop=True)
+
+
+def cargar_dataframe(df: pd.DataFrame, restaurante: str, engine=None) -> int:
+    """Carga una tabla ya extraída, creando las dimensiones requeridas antes de los hechos."""
+    eng = engine or get_engine()
+    init_db(eng)
+    clean = transformar_datos(df, restaurante)
+    if clean.empty:
+        return 0
+
+    weekdays = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+    with get_db_session(eng) as session:
+        hotels = {item.codigo_hotel: item for item in session.query(DimHotel).all()}
+        service_rows = session.query(DimServicio).all()
+        services = {item.codigo_servicio: item.id_servicio for item in service_rows}
+        service_restaurants = {item.codigo_servicio: item.restaurante for item in service_rows}
+        attentions = {
+            (item.atencion, item.usuario, item.origen): item.id_atencion
+            for item in session.query(DimAtencion).all()
+        }
+        times = {item.fecha for item in session.query(DimTiempo.fecha).all()}
+        facts = []
+
+        for _, row in clean.iterrows():
+            hotel_code = row["hotel"] or "SIN_DATO"
+            service_code = row["servicio"] or "SIN_DATO"
+            hotel = hotels.get(hotel_code)
+            if hotel is None:
+                hotel = DimHotel(codigo_hotel=hotel_code, hotel_res=row["hotel_res"])
+                session.add(hotel)
+                session.flush()
+                hotels[hotel_code] = hotel
+            elif row["hotel_res"] and not hotel.hotel_res:
+                hotel.hotel_res = row["hotel_res"]
+            hotel_id = hotel.id_hotel
+
+            service_key = service_code
+            existing_restaurant = service_restaurants.get(service_key)
+            if (
+                existing_restaurant
+                and row["restaurante"]
+                and existing_restaurant.casefold() != row["restaurante"].casefold()
+            ):
+                restaurant_hash = hashlib.sha1(row["restaurante"].casefold().encode("utf-8")).hexdigest()[:10]
+                service_key = f"{service_code[:39]}~{restaurant_hash}"
+
+            service_id = services.get(service_key)
+            if service_id is None:
+                service = DimServicio(codigo_servicio=service_key, restaurante=row["restaurante"])
+                session.add(service)
+                session.flush()
+                services[service_key] = service_id = service.id_servicio
+                service_restaurants[service_key] = row["restaurante"]
+
+            attention_key = (row["atencion"], row["usuario"], row["origen"])
+            attention_id = attentions.get(attention_key)
+            if attention_id is None:
+                attention = DimAtencion(atencion=attention_key[0], usuario=attention_key[1], origen=attention_key[2])
+                session.add(attention)
+                session.flush()
+                attention_id = attentions[attention_key] = attention.id_atencion
+
+            service_date = row["fecha_servicio"]
+            if service_date not in times:
+                session.add(DimTiempo(
+                    fecha=service_date,
+                    anio=service_date.year,
+                    mes=service_date.month,
+                    dia=service_date.day,
+                    trimestre=(service_date.month - 1) // 3 + 1,
+                    dia_semana=weekdays[service_date.weekday()],
+                ))
+                times.add(service_date)
+
+            facts.append({
+                "id_reserva": int(row["id"]),
+                "id_hotel": hotel_id,
+                "id_servicio": service_id,
+                "id_atencion": attention_id,
+                "fecha_servicio": service_date,
+                "habitacion": row["habitacion"],
+                "titular": row["titular"],
+                "mesa": row["mesa"],
+                "turno": int(row["turno"]),
+                "horario": row["horario"],
+                "cargado": bool(row["cargado"]),
+                "obs": row["obs"],
+                "cross_flag": row["cross_flag"],
+                "remarks": row["remarks"],
+                "adultos": int(row["adultos"]),
+                "ninos": int(row["ninos"]),
+                "bebes": int(row["bebes"]),
+                "pax_total": int(row["pax_total"]),
+                "num_habs_invitadas": int(row["num_habs_invitadas"]),
+            })
+
+        ids = [record["id_reserva"] for record in facts]
+        for offset in range(0, len(ids), 500):
+            session.query(FactReservasRestaurantes).filter(
+                FactReservasRestaurantes.id_reserva.in_(ids[offset:offset + 500])
+            ).delete(synchronize_session=False)
+        session.bulk_insert_mappings(FactReservasRestaurantes, facts)
+    return len(facts)
+
+
+def leer_csv(path: Path) -> pd.DataFrame:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return pd.read_csv(path, sep=None, engine="python", encoding=encoding, dtype=str)
+        except UnicodeDecodeError:
+            continue
+    return pd.read_csv(path, sep=None, engine="python", encoding="latin-1", dtype=str)
+
+
+def run_etl():
+    """Procesa todos los CSV ubicados en datos_csv/ de forma dinámica."""
+    csv_directory = Path(PROJECT_ROOT) / "datos_csv"
+    files = sorted(csv_directory.glob("*.csv"))
+    if not files:
+        raise FileNotFoundError(f"No se encontraron archivos CSV en {csv_directory}")
+
+    engine = get_engine()
+    init_db(engine)
+    totals = {"files": 0, "input_rows": 0, "records_by_id": {}, "conflicting_ids": set(), "errors": []}
+    for path in files:
+        try:
+            raw = leer_csv(path)
+            restaurant = path.stem.rsplit(" ", 1)[0]
+            cleaned = transformar_datos(raw, restaurant)
+            totals["input_rows"] += len(cleaned)
+            for _, row in cleaned.iterrows():
+                reservation_id = int(row["id"])
+                record = {
+                    "servicio": row["servicio"],
+                    "restaurante": row["restaurante"],
+                    "fecha_servicio": row["fecha_servicio"],
+                    "pax_total": int(row["pax_total"]),
+                }
+                previous = totals["records_by_id"].get(reservation_id)
+                if previous and previous != record:
+                    totals["conflicting_ids"].add(reservation_id)
+                totals["records_by_id"][reservation_id] = record
+
+            inserted = cargar_dataframe(raw, restaurant, engine)
+            totals["files"] += 1
+            print(f"[ETL] {path.name}: {inserted:,} reservas")
+        except Exception as exc:
+            totals["errors"].append((path.name, str(exc)))
+            print(f"[ETL] ERROR {path.name}: {exc}")
+
+    unique_records = totals["records_by_id"]
+    duplicate_ids = totals["input_rows"] - len(unique_records)
+    unique_pax = sum(record["pax_total"] for record in unique_records.values())
+    print(
+        f"[ETL] Finalizado: {totals['files']} archivos, {len(unique_records):,} reservas únicas, "
+        f"{unique_pax:,} pax, {duplicate_ids:,} Id repetidos descartados; "
+        f"{len(totals['conflicting_ids']):,} Id con datos/servicio distintos resueltos por último archivo."
+    )
+    if totals["errors"]:
+        raise RuntimeError(f"Fallaron {len(totals['errors'])} archivos: {totals['errors']}")
 
 
 if __name__ == "__main__":

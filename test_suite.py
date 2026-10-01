@@ -1,144 +1,107 @@
-"""
-test_suite.py
-=============
-Suite de pruebas automatizadas para validar:
-1. Esquema en Estrella e integridad referencial de base de datos.
-2. Pipeline ETL con cálculo de métricas (total_pax, cross_dining, periqueras) y anonimización.
-3. Compatibilidad de carga con archivos CSV y Excel (.xlsx).
-4. Motor de Machine Learning (entrenamiento y predicción de demanda con RandomForest).
-"""
+"""Regression tests for the normalized restaurant-reservation star schema."""
 
 import os
+import tempfile
 import unittest
-from datetime import date
-import pandas as pd
-import numpy as np
 
-from config_db import (
-    get_engine,
-    get_db_session,
-    init_db,
-    DimHotel,
-    DimRestaurante,
-    DimHorario,
-    DimTipoAtencion,
-    DimTiempo,
-    FactReservasRestaurantes,
-)
-from etl_pipeline import (
-    transformar_dataframe_transaccional,
-    generar_datos_mock,
-    ejecutar_etl_desde_archivo,
-    anonimizar_texto,
-    mapear_codigo_hotel,
-    mapear_codigo_restaurante,
-)
+import pandas as pd
+from sqlalchemy import inspect
 from sklearn.ensemble import RandomForestRegressor
+
+from config_db import DimServicio, FactReservasRestaurantes, get_db_session, get_engine, init_db
+from etl.etl_pipeline import cargar_dataframe, transformar_datos
+from main import get_kpis, obtener_kpis_resumen
 
 
 class TestBahiaPrincipeBI(unittest.TestCase):
+    def setUp(self):
+        file_descriptor, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(file_descriptor)
+        self.engine = get_engine(f"sqlite:///{self.db_path}")
+        init_db(self.engine)
 
-    @classmethod
-    def setUpClass(cls):
-        """Inicializa esquema y entorno de pruebas."""
-        cls.engine = init_db()
-        cls.base_dir = os.path.dirname(os.path.abspath(__file__))
+    def tearDown(self):
+        self.engine.dispose()
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
 
-    def test_01_star_schema_tables_exist(self):
-        """Verifica que todas las tablas del Esquema en Estrella existan."""
-        with get_db_session(self.engine) as session:
-            hoteles = session.query(DimHotel).all()
-            restaurantes = session.query(DimRestaurante).all()
-            horarios = session.query(DimHorario).all()
-            atenciones = session.query(DimTipoAtencion).all()
-
-            self.assertEqual(len(hoteles), 5, "Deben existir 5 hoteles del complejo")
-            self.assertEqual(len(restaurantes), 20, "Deben existir 20 restaurantes de especialidad")
-            self.assertGreaterEqual(len(horarios), 6, "Deben existir los turnos y franjas horarias")
-            self.assertGreaterEqual(len(atenciones), 5, "Deben existir los tipos de atención")
-
-    def test_02_etl_metric_calculations(self):
-        """Verifica cálculos de total_pax y es_cross_dining."""
-        raw_test_data = pd.DataFrame([
-            {
-                "Id": 999001,
-                "Fecha Servicio": "2026-09-15",
-                "Servicio": "MIK",
-                "Turno": 2,
-                "Horario": "20:00 - 21:30",
-                "Hotel": "AP3",
-                "Hotel Res.": "BPG",  # Distinto -> Cross-Dining = True
-                "#Adultos": 2,
-                "#Niños": 2,
-                "#Bebés": 1,
-                "Atención": "VIP1",
-                "Remarks": "Solicito periquera y llamar al 5551234567 para confirmar."
+    def test_star_schema_has_expected_tables_and_columns(self):
+        expected = {
+            "dim_hotel": {"id_hotel", "codigo_hotel", "hotel_res"},
+            "dim_servicio": {"id_servicio", "codigo_servicio", "restaurante"},
+            "dim_atencion": {"id_atencion", "atencion", "usuario", "origen"},
+            "dim_tiempo": {"fecha", "anio", "mes", "dia", "trimestre", "dia_semana"},
+            "fact_reservas_restaurantes": {
+                "id_reserva", "id_hotel", "id_servicio", "id_atencion", "fecha_servicio",
+                "habitacion", "titular", "mesa", "turno", "horario", "cargado", "obs",
+                "cross_flag", "remarks", "adultos", "ninos", "bebes", "pax_total",
+                "num_habs_invitadas",
             },
-            {
-                "Id": 999002,
-                "Fecha Servicio": "2026-09-15",
-                "Servicio": "DPI",
-                "Turno": 1,
-                "Horario": "17:30 - 19:00",
-                "Hotel": "BPG",
-                "Hotel Res.": "BPG",  # Mismo hotel -> Cross-Dining = False
-                "#Adultos": 2,
-                "#Niños": 0,
-                "#Bebés": 0,
-                "Atención": "STANDARD",
-                "Remarks": "Mesa cerca de ventana."
-            }
+        }
+        inspector = inspect(self.engine)
+        self.assertEqual(set(inspector.get_table_names()), set(expected))
+        for table, columns in expected.items():
+            actual = {column["name"] for column in inspector.get_columns(table)}
+            self.assertEqual(actual, columns)
+
+    def test_transform_deduplicates_and_calculates_pax(self):
+        raw = pd.DataFrame([
+            {"Id": "8001", "Fecha Servicio": "2026-09-15", "Servicio": "ALI", "Hotel": "1", "Hotel Res.": "1", "#Adultos": "2", "#Niños": None, "#Bebés": "1"},
+            {"Id": "8001", "Fecha Servicio": "2026-09-15", "Servicio": "ALI", "Hotel": "1", "Hotel Res.": "1", "#Adultos": "3", "#Niños": "1", "#Bebés": "0", "Habitación": " 0102 ", "Titular": "  TEST   PERSON  ", "Nº Habs. Invitadas": "2"},
         ])
 
-        df_trans, resumen = transformar_dataframe_transaccional(raw_test_data)
+        clean = transformar_datos(raw, "ALUX")
 
-        # Verificar total_pax
-        self.assertEqual(df_trans.loc[df_trans["id_reserva"] == 999001, "total_pax"].iloc[0], 5)
-        self.assertEqual(df_trans.loc[df_trans["id_reserva"] == 999002, "total_pax"].iloc[0], 2)
+        self.assertEqual(len(clean), 1)
+        self.assertEqual(clean.iloc[0]["pax_total"], 4)
+        self.assertEqual(clean.iloc[0]["num_habs_invitadas"], 2)
+        self.assertEqual(clean.iloc[0]["habitacion"], "0102")
+        self.assertEqual(clean.iloc[0]["titular"], "TEST PERSON")
 
-        # Verificar es_cross_dining
-        self.assertTrue(df_trans.loc[df_trans["id_reserva"] == 999001, "es_cross_dining"].iloc[0])
-        self.assertFalse(df_trans.loc[df_trans["id_reserva"] == 999002, "es_cross_dining"].iloc[0])
+    def test_load_and_api_kpis_are_idempotent(self):
+        raw = pd.DataFrame([
+            {"Id": 8101, "Fecha Servicio": "2026-09-15", "Servicio": "ALI", "Hotel": "1", "Hotel Res.": "1", "Atención": "VIP1", "Usuario": "U1", "Origen": "BPG", "#Adultos": 2, "#Niños": 1, "#Bebés": 0},
+        ])
 
-        # Verificar periquera
-        self.assertTrue(df_trans.loc[df_trans["id_reserva"] == 999001, "requiere_periquera"].iloc[0])
-        self.assertFalse(df_trans.loc[df_trans["id_reserva"] == 999002, "requiere_periquera"].iloc[0])
+        self.assertEqual(cargar_dataframe(raw, "ALUX", self.engine), 1)
+        init_db(self.engine)
+        with get_db_session(self.engine) as session:
+            summary = obtener_kpis_resumen(session)
+            response = get_kpis(db=session)
+            self.assertEqual(session.query(FactReservasRestaurantes).count(), 1)
+            self.assertEqual(summary["total_pax"], 3)
+            self.assertEqual(summary["distribucion_restaurante"][0]["restaurante"], "ALUX")
+            self.assertEqual(summary["desglose_hotel"][0]["hotel"], "1")
+            self.assertEqual(response.total_pax, 3)
+            self.assertEqual(len(response.cards), 4)
 
-        # Verificar anonimización (no debe aparecer el teléfono 5551234567)
-        obs_limpia = df_trans.loc[df_trans["id_reserva"] == 999001, "observaciones_limpias"].iloc[0]
-        self.assertNotIn("5551234567", obs_limpia)
+    def test_shared_service_code_keeps_each_restaurant(self):
+        first = pd.DataFrame([
+            {"Id": 8201, "Fecha Servicio": "2026-09-15", "Servicio": "SHARED", "Hotel": "1", "#Adultos": 2},
+        ])
+        second = pd.DataFrame([
+            {"Id": 8202, "Fecha Servicio": "2026-09-15", "Servicio": "SHARED", "Hotel": "1", "#Adultos": 3},
+        ])
 
-    def test_03_load_from_sample_files(self):
-        """Verifica que el pipeline pueda cargar archivos sample_reservas.csv y .xlsx."""
-        csv_file = os.path.join(self.base_dir, "sample_reservas.csv")
-        xlsx_file = os.path.join(self.base_dir, "sample_reservas.xlsx")
+        cargar_dataframe(first, "RESTAURANTE UNO", self.engine)
+        cargar_dataframe(second, "RESTAURANTE DOS", self.engine)
 
-        self.assertTrue(os.path.exists(csv_file), "Debe existir el archivo sample_reservas.csv")
-        self.assertTrue(os.path.exists(xlsx_file), "Debe existir el archivo sample_reservas.xlsx")
+        with get_db_session(self.engine) as session:
+            mappings = {
+                (item.codigo_servicio, item.restaurante)
+                for item in session.query(DimServicio).all()
+            }
+            self.assertIn(("SHARED", "RESTAURANTE UNO"), mappings)
+            self.assertTrue(any(name == "RESTAURANTE DOS" and code != "SHARED" for code, name in mappings))
 
-        resumen_csv = ejecutar_etl_desde_archivo(csv_file, es_csv=True)
-        self.assertGreater(resumen_csv["total_registros"], 0)
-        self.assertGreater(resumen_csv["registros_cargados_bd"], 0)
-
-    def test_04_machine_learning_pipeline(self):
-        """Verifica que el modelo de RandomForest pueda entrenarse y predecir demanda."""
-        # Dataset sintético mínimo para entrenamiento
-        X_mock = pd.DataFrame({
-            "mes": [8, 8, 9, 9, 9],
-            "dia_num": [1, 2, 5, 6, 7],
-            "es_fds_num": [0, 0, 1, 1, 1],
-            "turno": [1, 2, 2, 3, 2],
-            "capacidad": [110, 120, 150, 95, 140],
-            "rest_encoded": [0, 1, 2, 3, 4]
-        })
-        y_mock = pd.Series([45, 80, 110, 50, 95])
-
-        modelo = RandomForestRegressor(n_estimators=10, random_state=42)
-        modelo.fit(X_mock, y_mock)
-        preds = modelo.predict(X_mock)
-
-        self.assertEqual(len(preds), 5)
-        self.assertTrue(all(p > 0 for p in preds), "Todas las predicciones deben ser positivas")
+    def test_random_forest_prediction(self):
+        features = pd.DataFrame({"mes": [8, 8, 9, 9, 9], "dia_num": [1, 2, 5, 6, 7], "turno": [1, 2, 2, 3, 2]})
+        targets = pd.Series([45, 80, 110, 50, 95])
+        model = RandomForestRegressor(n_estimators=10, random_state=42)
+        model.fit(features, targets)
+        predictions = model.predict(features)
+        self.assertEqual(len(predictions), len(targets))
+        self.assertTrue(all(value > 0 for value in predictions))
 
 
 if __name__ == "__main__":

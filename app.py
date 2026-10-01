@@ -26,12 +26,10 @@ from config_db import (
     init_db,
     get_database_url,
     FactReservasRestaurantes,
-    DimRestaurante,
+    DimServicio,
+    DimAtencion,
     DimHotel,
-    DimHorario,
-    DimTipoAtencion,
     DimTiempo,
-    DimHabitacion,
 )
 from etl_pipeline import (
     ejecutar_etl_desde_archivo,
@@ -82,152 +80,101 @@ st.set_page_config(
 # Inyección de estilos CSS elegantes con temática Bahía Príncipe
 st.markdown("""
 <style>
-    :root {
-        --ink: #12233f;
-        --muted: #627089;
-        --blue: #1464d2;
-        --blue-soft: #eaf2ff;
-        --green: #13a678;
-        --gold: #e5a52b;
-        --line: #dce5f2;
-        --surface: #ffffff;
-    }
-
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
+    /* Fondo principal limpio y texto oscuro de alto contraste */
     [data-testid="stAppViewContainer"] {
-        background: linear-gradient(180deg, #f5f8fd 0%, #eef3fa 100%);
-        color: var(--ink);
+        background: #F8FAFC;
+        color: #0F172A;
     }
-    [data-testid="stHeader"] { background: rgba(245, 248, 253, 0.92); }
+    [data-testid="stHeader"] { 
+        background: rgba(248, 250, 252, 0.95); 
+    }
+
+    /* Barra lateral corporativa Bahía Príncipe con texto blanco nítido */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #10254b 0%, #172f5d 100%);
-        color: #ffffff;
+        background: linear-gradient(180deg, #0B1528 0%, #13223D 100%);
+        color: #FFFFFF;
     }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-    [data-testid="stSidebar"] label { color: #dfe9f8; }
-    h1, h2, h3, h4 { color: var(--ink); letter-spacing: 0; }
-    .block-container { max-width: 1500px; padding-top: 1.5rem; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+    [data-testid="stSidebar"] label { 
+        color: #F1F5F9 !important; 
+        font-weight: 500;
+    }
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 { 
+        color: #FFFFFF !important; 
+    }
 
+    /* Títulos principales con contraste oscuro */
+    h1, h2, h3, h4, h5, h6 { 
+        color: #0F172A !important; 
+        font-weight: 700;
+        letter-spacing: -0.01em; 
+    }
+    p, span {
+        color: #1E293B;
+    }
+
+    .block-container { 
+        max-width: 1500px; 
+        padding-top: 1.5rem; 
+    }
+
+    /* Tarjetas de Métricas Ejecutivas */
     .metric-card {
-        background: var(--surface);
-        border: 1px solid var(--line);
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
         border-radius: 10px;
         padding: 16px 18px;
-        color: var(--ink);
-        box-shadow: 0 8px 24px rgba(33, 63, 107, 0.08);
+        color: #0F172A;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
         min-height: 112px;
     }
     .metric-title {
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
+        letter-spacing: 0.06em;
+        color: #475569;
         margin-bottom: 6px;
-        font-weight: 600;
+        font-weight: 700;
     }
     .metric-value {
         font-size: 1.85rem;
         font-weight: 800;
-        color: var(--ink);
+        color: #0F172A;
         line-height: 1.1;
     }
     .metric-sub {
-        font-size: 0.78rem;
+        font-size: 0.8rem;
         margin-top: 6px;
-        color: var(--blue);
-        font-weight: 500;
-    }
-
-    .executive-hero {
-        background: linear-gradient(115deg, #102b5b 0%, #176bd1 68%, #16a678 130%);
-        color: #ffffff;
-        border-radius: 12px;
-        padding: 24px 28px;
-        margin: 0 0 22px;
-        box-shadow: 0 12px 30px rgba(24, 65, 125, 0.2);
-    }
-    .executive-hero h1, .executive-hero p, .executive-hero span { color: #ffffff; }
-    .executive-hero h1 { margin: 0; font-size: 1.8rem; }
-    .executive-hero p { margin: 6px 0 0; opacity: 0.86; }
-    .section-note {
-        background: var(--blue-soft);
-        border-left: 4px solid var(--blue);
-        border-radius: 6px;
-        color: #294568;
-        padding: 10px 14px;
-        margin: 8px 0 16px;
-        font-size: 0.86rem;
-    }
-    .decision-card {
-        background: #ffffff;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        padding: 14px 16px;
-        min-height: 120px;
-        box-shadow: 0 6px 18px rgba(33, 63, 107, 0.06);
-    }
-    .decision-card strong { color: var(--ink); }
-    .decision-card p { color: var(--muted); font-size: 0.84rem; margin: 6px 0 0; }
-    .report-band {
-        background: #ffffff;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 18px 20px;
-        margin: 12px 0;
-    }
-    
-    /* Badges de semáforo de ocupación */
-    .badge-ok {
-        background-color: #e8f8f2;
-        color: #087c5c;
-        border: 1px solid #43c59e;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-    .badge-warning {
-        background-color: #fff5df;
-        color: #986400;
-        border: 1px solid #e5a52b;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-    .badge-danger {
-        background-color: #ffebed;
-        color: #a82f3d;
-        border: 1px solid #e5747e;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 700;
+        color: #0284C7;
+        font-weight: 600;
     }
 
     /* Banner corporativo */
     .brand-header {
         background: linear-gradient(90deg, #0B1528 0%, #172B4D 50%, #0B1528 100%);
-        border: 1px solid rgba(197, 160, 89, 0.35);
+        border: 1px solid rgba(197, 160, 89, 0.4);
         border-radius: 14px;
         padding: 22px 28px;
         margin-bottom: 24px;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 8px 24px rgba(11, 21, 40, 0.25);
     }
     .brand-title {
-        color: #FFFFFF;
+        color: #FFFFFF !important;
         font-size: 1.7rem;
         font-weight: 800;
         margin: 0;
-        letter-spacing: -0.02em;
     }
     .brand-subtitle {
-        color: #C5A059;
+        color: #C5A059 !important;
         font-size: 0.92rem;
         font-weight: 600;
         margin-top: 4px;
@@ -235,23 +182,121 @@ st.markdown("""
         letter-spacing: 0.06em;
     }
 
-    /* Tab styling */
+    .executive-hero {
+        background: linear-gradient(115deg, #0B1528 0%, #1E3A8A 65%, #0D9488 130%);
+        color: #FFFFFF;
+        border-radius: 12px;
+        padding: 24px 28px;
+        margin: 0 0 22px;
+        box-shadow: 0 10px 25px rgba(11, 21, 40, 0.2);
+    }
+    .executive-hero h1, .executive-hero p, .executive-hero span { 
+        color: #FFFFFF !important; 
+    }
+    .executive-hero h1 { margin: 0; font-size: 1.8rem; }
+    .executive-hero p { margin: 6px 0 0; opacity: 0.9; }
+
+    .section-note {
+        background: #EFF6FF;
+        border-left: 4px solid #0284C7;
+        border-radius: 6px;
+        color: #1E3A8A;
+        padding: 11px 16px;
+        margin: 8px 0 16px;
+        font-size: 0.88rem;
+    }
+    .section-note strong {
+        color: #0F172A;
+    }
+
+    .decision-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 9px;
+        padding: 16px;
+        min-height: 120px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+    .decision-card strong { 
+        color: #0F172A; 
+        font-size: 0.95rem;
+    }
+    .decision-card p { 
+        color: #475569; 
+        font-size: 0.85rem; 
+        margin: 6px 0 0; 
+    }
+
+    /* Badges de semáforo de ocupación */
+    .badge-ok {
+        background-color: #DCFCE7;
+        color: #166534;
+        border: 1px solid #86EFAC;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+    .badge-warning {
+        background-color: #FEF3C7;
+        color: #92400E;
+        border: 1px solid #FCD34D;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+    .badge-danger {
+        background-color: #FEE2E2;
+        color: #991B1B;
+        border: 1px solid #FCA5A5;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    /* Estilo de pestañas visibles */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 6px;
+        gap: 8px;
+        border-bottom: 2px solid #E2E8F0;
+        padding-bottom: 4px;
     }
     .stTabs [data-baseweb="tab"] {
+        background: #FFFFFF;
+        border: 1px solid #CBD5E1;
         border-radius: 8px 8px 0 0;
         padding: 10px 18px;
         font-weight: 600;
+        color: #334155;
     }
-    
+    .stTabs [aria-selected="true"] {
+        background: #0B1528 !important;
+        color: #FFFFFF !important;
+        border-color: #0B1528 !important;
+    }
+
+    /* Métricas nativas de Streamlit */
+    [data-testid="stMetricValue"] {
+        color: #0F172A !important;
+        font-weight: 800 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #475569 !important;
+        font-weight: 700 !important;
+    }
+
     /* Alertas y avisos */
     .vip-alert-card {
-        background: rgba(197, 160, 89, 0.12);
+        background: #FFFBEB;
         border-left: 4px solid #C5A059;
-        padding: 12px 16px;
+        padding: 14px 18px;
         border-radius: 0 8px 8px 0;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
+        color: #78350F;
+    }
+    .vip-alert-card strong {
+        color: #92400E;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -264,145 +309,91 @@ st.markdown("""
 @st.cache_data(ttl=60)
 def cargar_dataset_completo() -> pd.DataFrame:
     """
-    Carga el dataset directamente desde PostgreSQL Local (tabla reservas_servicios).
-    Normaliza y enriquece los datos para alimentar los gráficos interactivos de Plotly.
+    Carga el dataset completo de reservas desde el Esquema en Estrella (BI)
+    unido con las dimensiones reales de hoteles, restaurantes, horarios y atenciones.
+    Asegura que las tablas existan llamando a init_db().
     """
-    from database import engine, init_db as init_pg_db
+    columnas_obligatorias = [
+        "id_reserva", "id_fecha", "anio", "mes", "dia", "dia_semana", "es_fin_de_semana", "temporada",
+        "id_restaurante", "nombre_restaurante", "especialidad", "capacidad_maxima_pax",
+        "cod_hotel_restaurante", "hotel_restaurante", "cod_hotel_hospedaje", "hotel_hospedaje",
+        "turno", "horario_texto", "franja_horaria", "id_horario",
+        "categoria_atencion", "prioridad_servicio", "id_tipo_atencion",
+        "num_adultos", "num_ninos", "num_bebes", "total_pax", "habs_invitadas",
+        "es_cross_dining", "requiere_periquera", "observaciones_limpias"
+    ]
 
-    # El esquema estrella es la fuente histórica del ETL y conserva la granularidad diaria.
     try:
         engine_star = get_engine()
+        init_db(engine_star)  # Asegurar creación automática de tablas y catálogos seed
+
         query_star = """
-        SELECT f.id_reserva, f.id_fecha, t.anio, t.mes, t.dia, t.dia_semana, t.es_fin_de_semana, t.temporada,
-               f.id_restaurante, r.nombre_restaurante, r.especialidad, r.capacidad_maxima_pax,
-               h_ub.codigo_origen AS cod_hotel_restaurante, h_ub.nombre_hotel AS hotel_restaurante,
-               h_hosp.codigo_origen AS cod_hotel_hospedaje, h_hosp.nombre_hotel AS hotel_hospedaje,
-               hor.turno, hor.horario_texto, hor.franja_horaria, ta.categoria_atencion, ta.prioridad_servicio,
-               f.num_adultos, f.num_ninos, f.num_bebes, f.total_pax, f.habs_invitadas,
-               f.es_cross_dining, f.requiere_periquera, f.observaciones_limpias
-        FROM "Fact_Reservas_Restaurantes" f
-        INNER JOIN "Dim_Tiempo" t ON f.id_fecha = t.id_fecha
-        INNER JOIN "Dim_Restaurante" r ON f.id_restaurante = r.id_restaurante
-        INNER JOIN "Dim_Hotel" h_ub ON r.id_hotel_ubicacion = h_ub.id_hotel
-        INNER JOIN "Dim_Hotel" h_hosp ON f.id_hotel_hospedaje = h_hosp.id_hotel
-        INNER JOIN "Dim_Horario" hor ON f.id_horario = hor.id_horario
-        INNER JOIN "Dim_Tipo_Atencion" ta ON f.id_tipo_atencion = ta.id_tipo_atencion
+        SELECT f.id_reserva, f.fecha_servicio AS id_fecha,
+               t.anio, t.mes, t.dia, t.dia_semana,
+               f.id_servicio AS id_restaurante,
+               COALESCE(s.restaurante, s.codigo_servicio) AS nombre_restaurante,
+               s.codigo_servicio AS especialidad, 0 AS capacidad_maxima_pax,
+               h.codigo_hotel AS cod_hotel_restaurante, h.codigo_hotel AS hotel_restaurante,
+               COALESCE(h.hotel_res, h.codigo_hotel) AS cod_hotel_hospedaje,
+               COALESCE(h.hotel_res, h.codigo_hotel) AS hotel_hospedaje,
+               f.turno, f.horario AS horario_texto, f.horario AS franja_horaria,
+               f.turno AS id_horario, COALESCE(a.atencion, 'Sin especificar') AS categoria_atencion,
+               0 AS prioridad_servicio, f.id_atencion AS id_tipo_atencion,
+               f.adultos AS num_adultos, f.ninos AS num_ninos, f.bebes AS num_bebes,
+               f.pax_total AS total_pax, f.num_habs_invitadas AS habs_invitadas,
+               CASE WHEN UPPER(COALESCE(f.cross_flag, '')) IN ('Y', 'YES', 'TRUE', '1', 'SI', 'S')
+                    THEN 1 ELSE 0 END AS es_cross_dining,
+               f.remarks AS observaciones_limpias, a.usuario
+        FROM fact_reservas_restaurantes f
+        INNER JOIN dim_tiempo t ON f.fecha_servicio = t.fecha
+        INNER JOIN dim_servicio s ON f.id_servicio = s.id_servicio
+        INNER JOIN dim_hotel h ON f.id_hotel = h.id_hotel
+        INNER JOIN dim_atencion a ON f.id_atencion = a.id_atencion
         """
         df_star = pd.read_sql(text(query_star), con=engine_star)
         if not df_star.empty:
+            df_star["categoria_atencion"] = (
+                df_star["categoria_atencion"].fillna("Sin especificar").astype(str)
+            )
             df_star["id_fecha"] = pd.to_datetime(df_star["id_fecha"]).dt.date
+            df_star["es_fin_de_semana"] = pd.to_datetime(df_star["id_fecha"]).dt.weekday.isin([4, 5, 6])
+            df_star["temporada"] = df_star["mes"].map(
+                lambda month: "Alta" if month in (12, 1, 2, 3, 4, 7, 8) else ("Media" if month in (5, 6) else "Baja")
+            )
+            df_star["requiere_periquera"] = (df_star["num_bebes"] > 0) | df_star["observaciones_limpias"].astype(str).str.lower().str.contains("periquera|trona|bebe|bebé|cuna|baby", na=False)
+            for c in columnas_obligatorias:
+                if c not in df_star.columns:
+                    df_star[c] = "N/A" if ("nombre" in c or "hotel" in c or "categoria" in c) else 0
             return df_star
     except Exception as e:
-        st.warning(f"Aviso al consultar el histórico del esquema estrella: {e}")
+        st.error(f"Error al cargar datos desde el Esquema en Estrella: {e}")
 
-    init_pg_db()
-
-    try:
-        query_pg = "SELECT * FROM v_reservas_completas ORDER BY fecha_servicio DESC, turno ASC"
-        df = pd.read_sql(text(query_pg), con=engine)
-        if not df.empty:
-            df["id_servicio"] = df.get("id_servicio", 1)
-            df["id_turno_horario"] = df.get("id_turno_horario", 1)
-            df["id_hotel"] = df.get("id_hotel", df.get("id_hotel_ubicacion", 1))
-            df["id_origen"] = df.get("id_origen", df.get("id_hotel", 1))
-            df["id_atencion"] = df.get("id_atencion", 1)
-            df["id_usuario"] = df.get("id_usuario", 1)
-
-            df["id_restaurante"] = df["id_servicio"].fillna(1).astype(int)
-            df["id_hotel_hospedaje"] = df["id_origen"].fillna(df["id_hotel"]).fillna(1).astype(int)
-            df["id_hotel_ubicacion"] = df["id_hotel"].fillna(1).astype(int)
-            df["id_horario"] = df["id_turno_horario"].fillna(1).astype(int)
-            df["id_tipo_atencion"] = df["id_atencion"].fillna(1).astype(int)
-
-            df["id_fecha"] = pd.to_datetime(df["fecha_servicio"]).dt.date
-            df["id_reserva"] = df["id"]
-            df["nombre_restaurante"] = df["servicio_nombre"].fillna(df["servicio"]).fillna("DPI - Gourmet")
-            df["especialidad"] = "Gourmet / Fusión Internacional"
-            df["capacidad_maxima_pax"] = 120
-            df["cod_hotel_restaurante"] = df["hotel"].fillna("BPG")
-
-            hotel_map = {
-                "1": "Bahia Principe Grand Tulum",
-                "4": "Bahia Principe Luxury Akumal",
-                "10": "Bahia Principe Grand Coba",
-                "16": "Bahia Principe Luxury Sian Ka'an",
-                "21": "Bahia Principe Grand Bouganville",
-                "BPG": "Bahia Principe Grand Tulum",
-                "AP3": "Bahia Principe Luxury Akumal",
-                "TOI": "Bahia Principe Grand Coba",
-                "BPS": "Bahia Principe Luxury Sian Ka'an",
-                "BPB": "Bahia Principe Grand Bouganville",
-            }
-            df["hotel_restaurante"] = df["hotel"].fillna("BPG").map(lambda x: hotel_map.get(str(x), f"Hotel {x}"))
-            df["hotel_hospedaje"] = df["origen"].fillna("BPG").map(lambda x: hotel_map.get(str(x), f"Origen {x}"))
-            df["cod_hotel_hospedaje"] = df["origen"].fillna("BPG")
-            df["horario_texto"] = df["horario"].fillna("Horario Estándar")
-            df["franja_horaria"] = "Turno " + df["turno"].astype(str) + " (" + df["horario_texto"] + ")"
-            df["categoria_atencion"] = df["atencion"].fillna("Standard")
-            df["prioridad_servicio"] = df["categoria_atencion"].apply(lambda x: 1 if "VIP" in str(x).upper() else 4)
-            df["num_adultos"] = df["adultos"].fillna(0).astype(int)
-            df["num_ninos"] = df["ninos"].fillna(0).astype(int)
-            df["num_bebes"] = df["bebes"].fillna(0).astype(int)
-            df["total_pax"] = df["pax_total"].fillna(0).astype(int)
-            df["habs_invitadas"] = 0
-            df["es_cross_dining"] = df["origen"].fillna("BPG") != df["hotel"].fillna("BPG")
-            df["requiere_periquera"] = df["num_bebes"] > 0
-            df["observaciones_limpias"] = df["usuario"].fillna("")
-
-            dt_series = pd.to_datetime(df["id_fecha"])
-            df["anio"] = dt_series.dt.year
-            df["mes"] = dt_series.dt.month
-            df["dia"] = dt_series.dt.day
-            dias_map = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
-            df["dia_semana"] = dt_series.dt.dayofweek.map(dias_map)
-            df["es_fin_de_semana"] = dt_series.dt.dayofweek.isin([5, 6])
-            df["temporada"] = "Temporada Alta"
-            return df
-    except Exception as e:
-        st.warning(f"Aviso al consultar PostgreSQL Local: {e}")
-
-    # Fallback al esquema en estrella si existiera
-    try:
-        engine_star = get_engine()
-        query_star = """
-        SELECT f.id_reserva, f.id_fecha, t.anio, t.mes, t.dia, t.dia_semana, t.es_fin_de_semana, t.temporada,
-               f.id_restaurante, r.nombre_restaurante, r.especialidad, r.capacidad_maxima_pax,
-               h_ub.codigo_origen AS cod_hotel_restaurante, h_ub.nombre_hotel AS hotel_restaurante,
-               h_hosp.codigo_origen AS cod_hotel_hospedaje, h_hosp.nombre_hotel AS hotel_hospedaje,
-               hor.turno, hor.horario_texto, hor.franja_horaria, ta.categoria_atencion, ta.prioridad_servicio,
-               f.num_adultos, f.num_ninos, f.num_bebes, f.total_pax, f.habs_invitadas,
-               f.es_cross_dining, f.requiere_periquera, f.observaciones_limpias
-        FROM "Fact_Reservas_Restaurantes" f
-        INNER JOIN "Dim_Tiempo" t ON f.id_fecha = t.id_fecha
-        INNER JOIN "Dim_Restaurante" r ON f.id_restaurante = r.id_restaurante
-        INNER JOIN "Dim_Hotel" h_ub ON r.id_hotel_ubicacion = h_ub.id_hotel
-        INNER JOIN "Dim_Hotel" h_hosp ON f.id_hotel_hospedaje = h_hosp.id_hotel
-        INNER JOIN "Dim_Horario" hor ON f.id_horario = hor.id_horario
-        INNER JOIN "Dim_Tipo_Atencion" ta ON f.id_tipo_atencion = ta.id_tipo_atencion
-        """
-        df_star = pd.read_sql(text(query_star), con=engine_star)
-        if not df_star.empty:
-            df_star["id_fecha"] = pd.to_datetime(df_star["id_fecha"]).dt.date
-        return df_star
-    except Exception:
-        return pd.DataFrame()
+    return pd.DataFrame(columns=columnas_obligatorias)
 
 
 @st.cache_data(ttl=120)
 def cargar_demo_habitaciones() -> pd.DataFrame:
-    """Carga datos de habitaciones para métricas de ocupación."""
+    """Resume reservas y pax por habitación con los datos presentes en la tabla de hechos."""
     try:
-        from database import engine
-        return pd.read_sql(text("SELECT id, hotel, origen, usuario FROM reservas_servicios LIMIT 50"), con=engine)
+        engine = get_engine()
+        query = """
+        SELECT habitacion, COUNT(*) AS reservas, SUM(pax_total) AS pax
+        FROM fact_reservas_restaurantes
+        WHERE habitacion IS NOT NULL AND habitacion != ''
+        GROUP BY habitacion
+        ORDER BY pax DESC
+        LIMIT 20
+        """
+        return pd.read_sql(text(query), con=engine)
     except Exception:
         return pd.DataFrame()
 
 
 def asegurar_base_datos_inicializada():
-    """Verifica si hay datos y deja la carga anual bajo control del usuario."""
+    """Verifica si hay datos en el esquema en estrella."""
     df = cargar_dataset_completo()
     if df.empty:
-        st.info("Base de datos vacía. Sube el archivo histórico anual desde la barra lateral para comenzar.")
+        st.info("Base de datos del Esquema en Estrella vacía. Sube el archivo histórico anual desde la barra lateral para comenzar.")
 
 
 # Asegurar que la BD esté lista
@@ -427,35 +418,79 @@ with st.sidebar:
     # 1. GESTIÓN DE FUENTE DE DATOS
     st.markdown("---")
     st.subheader("📂 Ingesta de Datos (ETL)")
-    archivo_subido = st.file_uploader(
-        "Cargar archivo transaccional (.xlsx o .csv):",
-        type=["xlsx", "csv"],
-        help="El archivo debe contener las columnas transaccionales: Id, Fecha Servicio, Servicio, Turno, Horario, Hotel, Hotel Res., #Adultos, #Niños, etc."
+
+    # Formatos aceptados (sin límite de archivos ni tamaño por archivo)
+    FORMATOS_ACEPTADOS = [
+        "csv", "xlsx", "xls", "ods",          # tabulares
+        "tsv", "txt",                           # texto delimitado
+        "sql",                                  # dump SQL (INSERT INTO)
+        "db", "sqlite", "sqlite3",              # bases de datos SQLite
+        "json", "jsonl",                        # JSON / JSON Lines
+        "parquet", "feather", "orc",            # columnar/binario
+    ]
+
+    archivos_subidos = st.file_uploader(
+        "📁 Cargar archivos de datos (uno o varios, sin límite de cantidad):",
+        type=FORMATOS_ACEPTADOS,
+        accept_multiple_files=True,
+        help=(
+            "Formatos soportados: CSV, Excel (.xlsx/.xls/.ods), TSV, TXT, SQL (INSERT INTO), "
+            "SQLite (.db/.sqlite), JSON, JSONL, Parquet, Feather, ORC.\n\n"
+            "Puedes seleccionar todos los archivos que necesites a la vez. "
+            "El sistema los procesará en secuencia y consolidará los resultados."
+        ),
     )
 
-    if archivo_subido is not None:
-        reemplazar_datos = st.checkbox(
-            "Reemplazar todos los datos actuales con este archivo",
-            value=True,
-            help="Úsalo cuando el archivo contiene el histórico completo de un año.",
+    if archivos_subidos:
+        n = len(archivos_subidos)
+        nombres = [f.name for f in archivos_subidos]
+        st.info(
+            f"**{n} archivo{'s' if n > 1 else ''} seleccionado{'s' if n > 1 else ''}:** "
+            + ", ".join(f"`{nm}`" for nm in nombres[:8])
+            + (f" … y {n - 8} más" if n > 8 else "")
         )
+
+        reemplazar_datos = st.checkbox(
+            "Reemplazar todos los datos actuales antes de cargar",
+            value=False,
+            help=(
+                "Activa esta opción solo si deseas borrar toda la BD antes de cargar. "
+                "Para carga acumulativa (agregar datos) déjala desactivada."
+            ),
+        )
+
         if st.button("⚡ Procesar y Cargar a BD", use_container_width=True, type="primary"):
-            with st.spinner("Ejecutando pipeline ETL hacia PostgreSQL Local..."):
+            with st.spinner(f"Ejecutando carga masiva de {n} archivo{'s' if n > 1 else ''}..."):
                 try:
-                    from etl_pipeline import ejecutar_etl_desde_archivo
-                    resumen = ejecutar_etl_desde_archivo(
-                        archivo_subido,
-                        es_csv=archivo_subido.name.lower().endswith(".csv"),
-                        reemplazar=reemplazar_datos,
+                    from etl_pipeline import ejecutar_etl_carga_masiva
+                    resumen = ejecutar_etl_carga_masiva(
+                        archivos_subidos,
+                        reemplazar_primero=reemplazar_datos,
                     )
-                    st.success(
-                        f"✅ Histórico cargado: {resumen['registros_cargados_bd']} reservas, "
-                        f"{resumen['fechas_unicas']} días entre {resumen['fecha_min']} y {resumen['fecha_max']}."
-                    )
+
+                    exitosos = resumen["archivos_exitosos"]
+                    con_error = resumen["archivos_con_error"]
+
+                    if exitosos:
+                        st.success(
+                            f"✅ Carga masiva completada: **{resumen['total_registros']:,}** reservas únicas cargadas "
+                            f"desde **{len(exitosos)}** archivo{'s' if len(exitosos) > 1 else ''}. "
+                            + (f"Se consolidaron **{resumen['ids_duplicados']:,}** Id repetidos. " if resumen.get("ids_duplicados") else "")
+                            + (
+                                f"Rango de fechas: {resumen['fecha_min']} → {resumen['fecha_max']} "
+                                f"({resumen['fechas_unicas']} días)."
+                                if resumen["fecha_min"]
+                                else ""
+                            )
+                        )
+                    if con_error:
+                        for nombre_err, msg_err in con_error:
+                            st.warning(f"⚠️ **{nombre_err}** no se pudo procesar: {msg_err}")
+
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Error en el ETL: {e}")
+                    st.error(f"❌ Error en la carga masiva: {e}")
 
     col_btn1, col_btn2, col_btn3 = st.columns(3)
     with col_btn1:
@@ -728,14 +763,21 @@ with tabs[0]:
         df_rest_agg["pax_por_noche"] = df_rest_agg["total_pax_rest"] / df_rest_agg["dias_efectivos"]
         # Porcentaje de ocupación sobre capacidad por noche (asumiendo turnos activos)
         cap_noche = df_rest_agg["capacidad_maxima_pax"] * max(1, len(turnos_sel))
-        df_rest_agg["pct_ocupacion"] = ((df_rest_agg["pax_por_noche"] / cap_noche) * 100).round(1)
+        df_rest_agg["pct_ocupacion"] = np.where(
+            cap_noche > 0,
+            ((df_rest_agg["pax_por_noche"] / cap_noche) * 100).round(1),
+            np.nan,
+        )
 
         # Mostrar tarjetas semafóricas en columnas
         rest_cols = st.columns(4)
         for idx, row in df_rest_agg.sort_values(by="pct_ocupacion", ascending=False).iterrows():
             col_idx = idx % 4
             pct = row["pct_ocupacion"]
-            if pct < 75:
+            if pd.isna(pct):
+                badge_html = '<span class="badge-warning">Capacidad no registrada</span>'
+                b_color = "#94A3B8"
+            elif pct < 75:
                 badge_html = f'<span class="badge-ok">🟢 {pct}% NORMAL</span>'
                 b_color = "#10B981"
             elif pct <= 90:
@@ -747,17 +789,17 @@ with tabs[0]:
 
             with rest_cols[col_idx]:
                 st.markdown(f"""
-                    <div style="background: #13223D; border-top: 4px solid {b_color}; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                    <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid {b_color}; border-radius: 8px; padding: 14px; margin-bottom: 14px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-weight: 700; color: #FFFFFF; font-size: 0.95rem;">{row['nombre_restaurante']}</span>
+                            <span style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">{row['nombre_restaurante']}</span>
                         </div>
-                        <div style="font-size: 0.75rem; color: #C5A059; margin-top: 2px;">{row['especialidad']} • {row['hotel_restaurante']}</div>
+                        <div style="font-size: 0.78rem; color: #0284C7; font-weight: 600; margin-top: 2px;">{row['especialidad']} • {row['hotel_restaurante']}</div>
                         <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.8rem; color: #94A3B8;">Capacidad: {row['capacidad_maxima_pax']} pax</span>
+                            <span style="font-size: 0.8rem; color: #64748B;">Capacidad: {'No registrada' if not row['capacidad_maxima_pax'] else f"{row['capacidad_maxima_pax']} pax"}</span>
                             {badge_html}
                         </div>
-                        <div style="margin-top: 6px; font-size: 0.75rem; color: #CBD5E1;">
-                            Total: <strong>{row['total_pax_rest']:,} pax</strong> ({int(row['pax_por_noche'])} pax/noche)
+                        <div style="margin-top: 6px; font-size: 0.8rem; color: #334155;">
+                            Total: <strong style="color: #0F172A;">{row['total_pax_rest']:,} pax</strong> ({int(row['pax_por_noche'])} pax/noche)
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -792,12 +834,13 @@ with tabs[0]:
                 yaxis="y2"
             ))
             fig_trend.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#F8FAFC"),
-                yaxis=dict(title="Total Comensales (Pax)", gridcolor="rgba(255,255,255,0.08)"),
-                yaxis2=dict(title="Número de Reservas", overlaying="y", side="right", showgrid=False),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                paper_bgcolor="rgba(255,255,255,0.7)",
+                plot_bgcolor="rgba(255,255,255,0.7)",
+                font=dict(color="#0F172A", family="Plus Jakarta Sans, sans-serif"),
+                xaxis=dict(gridcolor="#E2E8F0", tickfont=dict(color="#334155"), title_font=dict(color="#0F172A")),
+                yaxis=dict(title="Total Comensales (Pax)", title_font=dict(color="#0F172A"), tickfont=dict(color="#334155"), gridcolor="#E2E8F0"),
+                yaxis2=dict(title="Número de Reservas", title_font=dict(color="#0F172A"), tickfont=dict(color="#334155"), overlaying="y", side="right", showgrid=False),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color="#0F172A")),
                 margin=dict(l=40, r=40, t=30, b=30),
                 height=380
             )
@@ -815,11 +858,11 @@ with tabs[0]:
                 color_discrete_sequence=["#C5A059", "#38BDF8", "#10B981", "#818CF8", "#F472B6"]
             )
             fig_pie.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#F8FAFC"),
+                paper_bgcolor="rgba(255,255,255,0.7)",
+                font=dict(color="#0F172A", family="Plus Jakarta Sans, sans-serif"),
                 margin=dict(l=20, r=20, t=20, b=20),
                 height=380,
-                legend=dict(orientation="v", yanchor="middle", y=0.5)
+                legend=dict(orientation="v", yanchor="middle", y=0.5, font=dict(color="#0F172A"))
             )
             st.plotly_chart(fig_pie, use_container_width=True)
             st.markdown("<div class='section-note'><strong>Resultado:</strong> permite localizar qué hoteles concentran el consumo y dónde conviene redistribuir promociones, mesas o recursos.</div>", unsafe_allow_html=True)
@@ -854,12 +897,14 @@ with tabs[1]:
             aspect="auto"
         )
         fig_heat.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
+            paper_bgcolor="rgba(255,255,255,0.7)",
+            plot_bgcolor="rgba(255,255,255,0.7)",
+            font=dict(color="#0F172A", family="Plus Jakarta Sans, sans-serif"),
             margin=dict(l=150, r=30, t=30, b=80),
             height=480
         )
+        fig_heat.update_xaxes(tickfont=dict(color="#334155", size=11), title_font=dict(color="#0F172A"))
+        fig_heat.update_yaxes(tickfont=dict(color="#334155", size=11), title_font=dict(color="#0F172A"))
         st.plotly_chart(fig_heat, use_container_width=True)
 
         st.markdown("---")
@@ -884,10 +929,11 @@ with tabs[1]:
             )
             fig_turnos.update_traces(textposition="outside")
             fig_turnos.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#F8FAFC"),
-                yaxis=dict(gridcolor="rgba(255,255,255,0.08)"),
+                paper_bgcolor="rgba(255,255,255,0.7)",
+                plot_bgcolor="rgba(255,255,255,0.7)",
+                font=dict(color="#0F172A", family="Plus Jakarta Sans, sans-serif"),
+                yaxis=dict(gridcolor="#E2E8F0", tickfont=dict(color="#334155"), title_font=dict(color="#0F172A")),
+                xaxis=dict(tickfont=dict(color="#334155"), title_font=dict(color="#0F172A")),
                 margin=dict(l=30, r=30, t=30, b=30),
                 height=350
             )
@@ -900,8 +946,8 @@ with tabs[1]:
                 st.markdown(f"""
                     <div class="vip-alert-card">
                         <strong>📌 Hallazgo de Yield Management:</strong><br>
-                        • <strong>Horario Pico Crítico:</strong> <span style="color: #F87171;">{hora_pico}</span> concentra el {round(df_turno_agg.iloc[0]['pax_total']/total_pax*100, 1)}% de la demanda.<br>
-                        • <strong>Horario Valle Disponible:</strong> <span style="color: #34D399;">{hora_valle}</span> presenta {round(df_turno_agg.iloc[-1]['pax_total']/total_pax*100, 1)}% de demanda (oportunidad de redistribución e incentivos a huéspedes).
+                        • <strong>Horario Pico Crítico:</strong> <span style="color: #DC2626; font-weight: 700;">{hora_pico}</span> concentra el {round(df_turno_agg.iloc[0]['pax_total']/total_pax*100, 1)}% de la demanda.<br>
+                        • <strong>Horario Valle Disponible:</strong> <span style="color: #059669; font-weight: 700;">{hora_valle}</span> presenta {round(df_turno_agg.iloc[-1]['pax_total']/total_pax*100, 1)}% de demanda (oportunidad de redistribución e incentivos a huéspedes).
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -932,10 +978,11 @@ with tabs[1]:
                 color_discrete_sequence=["#C5A059", "#10B981", "#38BDF8", "#F59E0B"]
             )
             fig_mesas.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#F8FAFC"),
+                paper_bgcolor="rgba(255,255,255,0.7)",
+                font=dict(color="#0F172A", family="Plus Jakarta Sans, sans-serif"),
                 margin=dict(l=20, r=20, t=20, b=20),
-                height=300
+                height=300,
+                legend=dict(font=dict(color="#0F172A"))
             )
             st.plotly_chart(fig_mesas, use_container_width=True)
 
@@ -1017,14 +1064,27 @@ with tabs[2]:
         st.caption("Listado en vivo de comensales que requieren atención protocolar de Gerencia o montajes con requerimientos especiales:")
 
         # Filtro de reservas VIP o con periquera o con observaciones
-        filtro_maitre = df_filtrado[
+        cols_maitre_req = [
+            "id_reserva", "id_fecha", "nombre_restaurante", "horario_texto",
+            "categoria_atencion", "id_tipo_atencion", "hotel_hospedaje",
+            "num_adultos", "num_ninos", "num_bebes", "total_pax",
+            "requiere_periquera", "observaciones_limpias"
+        ]
+        for col_m in cols_maitre_req:
+            if col_m not in df_filtrado.columns:
+                df_filtrado[col_m] = "N/A"
+
+        condicion_maitre = (
             (df_filtrado["categoria_atencion"].isin(["VIP", "Fidelidad", "Especial"])) |
             (df_filtrado["requiere_periquera"] == True) |
             (df_filtrado["observaciones_limpias"] != "")
-        ][["id_reserva", "id_fecha", "nombre_restaurante", "horario_texto", "categoria_atencion", "id_tipo_atencion", "hotel_hospedaje", "num_adultos", "num_ninos", "num_bebes", "total_pax", "requiere_periquera", "observaciones_limpias"]].copy()
+        )
+        filtro_maitre = df_filtrado[condicion_maitre][cols_maitre_req].copy()
 
         # Ordenar por fecha y horario
-        filtro_maitre = filtro_maitre.sort_values(["id_fecha", "horario_texto"])
+        sort_cols = [c for c in ["id_fecha", "horario_texto"] if c in filtro_maitre.columns]
+        if sort_cols:
+            filtro_maitre = filtro_maitre.sort_values(sort_cols)
 
         st.dataframe(
             filtro_maitre.rename(columns={
@@ -1264,28 +1324,26 @@ with tabs[4]:
 # TAB 6: ESCALABILIDAD FUTURA (DEMO HABITACIONES Y ORIGEN)
 # =====================================================================
 with tabs[5]:
-    st.subheader("🔮 Demostración de Escalabilidad Futura: Dim_Habitacion & Datos de Origen")
-    st.markdown("""
-        Esta sección demuestra cómo el **Esquema en Estrella** está preparado arquitectónicamente para integrarse
-        con el sistema **PMS hotelero (Opera / Protel)** y el **CRM** de Bahía Príncipe mediante la tabla de dimensión `Dim_Habitacion`.
-    """)
+    st.subheader("🛌 Análisis de Habitaciones")
+    st.caption("Reservas y comensales agrupados por habitación, a partir de los datos disponibles en el CSV.")
 
     df_hab = cargar_demo_habitaciones()
     if df_hab.empty:
         st.info("Cargando estructura demostrativa de habitaciones...")
     else:
+        st.info("Los archivos actuales no incluyen país de origen ni categoría de habitación. Esos análisis estarán disponibles cuando se integre esa información desde el PMS/CRM.")
         h1, h2 = st.columns(2)
         with h1:
-            st.markdown("#### 🌍 Comensales por País de Procedencia Geográfica")
-            df_pais = df_hab["pais_origen_agrupado"].value_counts().reset_index()
-            df_pais.columns = ["País de Origen", "Huéspedes Activos"]
+            st.markdown("#### Habitaciones con más comensales")
+            df_pais = df_hab.nlargest(10, "pax").sort_values("pax")
 
             fig_pais = px.bar(
                 df_pais,
-                x="Huéspedes Activos",
-                y="País de Origen",
+                x="pax",
+                y="habitacion",
                 orientation="h",
-                color="Huéspedes Activos",
+                color="pax",
+                labels={"pax": "Pax reservados", "habitacion": "Habitación"},
                 color_continuous_scale="Peach",
             )
             fig_pais.update_layout(
@@ -1299,16 +1357,17 @@ with tabs[5]:
             st.plotly_chart(fig_pais, use_container_width=True)
 
         with h2:
-            st.markdown("#### 🛌 Distribución por Categoría de Habitación")
-            df_cat = df_hab["tipo_categoria_cuarto"].value_counts().reset_index()
-            df_cat.columns = ["Categoría de Habitación", "Total"]
+            st.markdown("#### Habitaciones con más reservas")
+            df_cat = df_hab.nlargest(10, "reservas").sort_values("reservas")
 
-            fig_cat = px.pie(
+            fig_cat = px.bar(
                 df_cat,
-                names="Categoría de Habitación",
-                values="Total",
-                hole=0.4,
-                color_discrete_sequence=["#C5A059", "#38BDF8", "#10B981", "#818CF8", "#F472B6"]
+                x="reservas",
+                y="habitacion",
+                orientation="h",
+                color="reservas",
+                labels={"reservas": "Reservas", "habitacion": "Habitación"},
+                color_continuous_scale="Teal",
             )
             fig_cat.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -1318,15 +1377,6 @@ with tabs[5]:
             )
             st.plotly_chart(fig_cat, use_container_width=True)
 
-        st.markdown("""
-            <div class="vip-alert-card">
-                <strong>💡 Arquitectura Lista para Producción:</strong><br>
-                Cuando el departamento de IT habilite la sincronización de la base de datos de reservas de habitaciones con el PMS,
-                el campo <code>id_habitacion</code> en <code>Fact_Reservas_Restaurantes</code> se vinculará directamente a <code>Dim_Habitacion.id_habitacion</code>,
-                permitiendo correlacionar el <strong>gasto promedio por huésped</strong>, <strong>preferencias gastronómicas por nacionalidad</strong>
-                y <strong>retención de membresías Privilege Club</strong> sin necesidad de reestructurar la base de datos.
-            </div>
-        """, unsafe_allow_html=True)
 
 
 # =====================================================================

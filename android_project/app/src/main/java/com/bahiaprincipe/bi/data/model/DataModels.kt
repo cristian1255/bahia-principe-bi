@@ -15,6 +15,26 @@ data class KpiData(
     val colorHex: String = "#006B3F"
 )
 
+data class RestaurantKpi(
+    val restaurante: String,
+    val reservas: Int,
+    val pax: Int
+)
+
+data class HotelKpi(
+    val hotel: String,
+    val reservas: Int,
+    val pax: Int
+)
+
+data class KpiDashboardResponse(
+    val total_pax: Int = 0,
+    val total_reservas: Int = 0,
+    val distribucion_restaurante: List<RestaurantKpi> = emptyList(),
+    val desglose_hotel: List<HotelKpi> = emptyList(),
+    val cards: List<KpiData> = emptyList()
+)
+
 data class ReportEntry(
     val id: String,
     val title: String,

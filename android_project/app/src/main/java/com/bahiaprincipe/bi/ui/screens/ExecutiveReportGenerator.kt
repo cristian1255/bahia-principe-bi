@@ -1,6 +1,8 @@
 package com.bahiaprincipe.bi.ui.screens
 
 import android.content.Context
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.os.Environment
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -24,12 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bahiaprincipe.bi.data.model.KpiData
 import com.bahiaprincipe.bi.ui.viewmodel.ExecutiveViewModel
-import com.itextpdf.kernel.pdf.PdfDocument
-import com.itextpdf.kernel.pdf.PdfWriter
-import com.itextpdf.layout.Document
-import com.itextpdf.layout.element.Paragraph
-import com.itextpdf.layout.element.Table
-import com.itextpdf.layout.properties.TextAlignment
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -139,42 +135,50 @@ fun generateExecutivePdf(context: Context, kpis: List<KpiData>, aiText: String, 
             filePath.parentFile?.mkdirs()
         }
 
-        val writer = PdfWriter(FileOutputStream(filePath))
-        val pdf = PdfDocument(writer)
-        val document = Document(pdf)
-
-        // Header Corporativo
-        document.add(Paragraph("BAHÍA PRÍNCIPE BI - INTELIGENCIA ESTRATÉGICA")
-            .setTextAlignment(TextAlignment.CENTER)
-            .setBold()
-            .setFontSize(18f)
-            .setFontColor(com.itextpdf.kernel.colors.DeviceRgb(0, 107, 63)))
-        
-        document.add(Paragraph("Informe analítico generado por Gemini AI").setItalic().setFontSize(9f))
-        document.add(Paragraph("Fecha: ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}").setTextAlignment(TextAlignment.RIGHT))
-        
-        document.add(Paragraph("\n1. MÉTRICAS CLAVE (KPIs)\n").setBold())
-
-        // Table
-        val table = Table(floatArrayOf(3f, 2f, 2f))
-        table.useAllAvailableWidth()
-        table.addHeaderCell("Indicador")
-        table.addHeaderCell("Valor Actual")
-        table.addHeaderCell("Tendencia")
-
-        kpis.forEach { kpi ->
-            table.addCell(kpi.title)
-            table.addCell(kpi.value)
-            table.addCell(kpi.trend)
+        val pdf = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val page = pdf.startPage(pageInfo)
+        val canvas = page.canvas
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(0, 107, 63)
+            textSize = 18f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
-        document.add(table)
-
-        document.add(Paragraph("\n2. ANÁLISIS ESTRATÉGICO GENERADO POR IA\n").setBold())
-        document.add(Paragraph(aiText).setFontSize(11f))
-
-        document.add(Paragraph("\n\n__________________________\nValidado por: Inteligencia de Negocios").setTextAlignment(TextAlignment.CENTER))
-
-        document.close()
+        var y = 48f
+        canvas.drawText("BAHÍA PRÍNCIPE BI - INTELIGENCIA ESTRATÉGICA", 40f, y, paint)
+        paint.textSize = 10f
+        paint.typeface = android.graphics.Typeface.DEFAULT
+        paint.color = android.graphics.Color.DKGRAY
+        y += 28f
+        canvas.drawText("Informe analítico generado por Gemini AI", 40f, y, paint)
+        y += 24f
+        canvas.drawText("Fecha: ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}", 40f, y, paint)
+        y += 32f
+        paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        paint.color = android.graphics.Color.rgb(0, 107, 63)
+        canvas.drawText("1. MÉTRICAS CLAVE (KPIs)", 40f, y, paint)
+        paint.typeface = android.graphics.Typeface.DEFAULT
+        paint.color = android.graphics.Color.DKGRAY
+        y += 22f
+        kpis.forEach { kpi ->
+            canvas.drawText("${kpi.title}: ${kpi.value} (${kpi.trend})", 48f, y, paint)
+            y += 18f
+        }
+        y += 18f
+        paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        paint.color = android.graphics.Color.rgb(0, 107, 63)
+        canvas.drawText("2. ANÁLISIS ESTRATÉGICO GENERADO POR IA", 40f, y, paint)
+        paint.typeface = android.graphics.Typeface.DEFAULT
+        paint.color = android.graphics.Color.DKGRAY
+        y += 22f
+        aiText.split("\n").forEach { line ->
+            if (y > 790f) return@forEach
+            canvas.drawText(line.take(92), 48f, y, paint)
+            y += 16f
+        }
+        pdf.finishPage(page)
+        FileOutputStream(filePath).use { output -> pdf.writeTo(output) }
+        pdf.close()
         
         // Notificar al sistema que hay un nuevo archivo para que aparezca en descargas
         android.media.MediaScannerConnection.scanFile(context, arrayOf(filePath.absolutePath), null, null)

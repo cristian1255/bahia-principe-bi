@@ -30,12 +30,10 @@ from config_db import (
     get_engine,
     get_db_session,
     init_db,
+    DimAtencion,
     DimHotel,
-    DimRestaurante,
-    DimHorario,
-    DimTipoAtencion,
+    DimServicio,
     DimTiempo,
-    DimHabitacion,
     FactReservasRestaurantes,
 )
 
@@ -47,9 +45,9 @@ from config_db import (
 HOTELES_CATALOGO = [
     {"id_hotel": 1, "nombre_hotel": "Bahia Principe Grand Tulum", "codigo_origen": "BPG", "categoria": "Grand"},
     {"id_hotel": 4, "nombre_hotel": "Bahia Principe Luxury Akumal", "codigo_origen": "AP3", "categoria": "Luxury"},
-    {"id_hotel": 10, "nombre_hotel": "Bahia Principe Grand Coba", "codigo_origen": "TOI", "categoria": "Grand"},
-    {"id_hotel": 16, "nombre_hotel": "Bahia Principe Luxury Sian Ka'an", "codigo_origen": "BPS", "categoria": "Luxury (Adults Only)"},
-    {"id_hotel": 21, "nombre_hotel": "Bahia Principe Grand Bouganville", "codigo_origen": "BPB", "categoria": "Grand"},
+    {"id_hotel": 10, "nombre_hotel": "Bahia Principe Grand Coba", "codigo_origen": "COB", "categoria": "Grand"},
+    {"id_hotel": 16, "nombre_hotel": "Bahia Principe Hotel Tequila", "codigo_origen": "TOI", "categoria": "Grand"},
+    {"id_hotel": 21, "nombre_hotel": "Bahia Principe Luxury Sian Ka'an", "codigo_origen": "SIA", "categoria": "Luxury (Adults Only)"},
 ]
 
 # 20 Restaurantes de Especialidad distribuidos entre los 5 hoteles
@@ -106,21 +104,6 @@ TIPOS_ATENCION_CATALOGO = [
     {"id_tipo_atencion": "CUMPLEANOS", "categoria_atencion": "Especial", "prioridad_servicio": 3},
 ]
 
-PAISES_ORIGEN = [
-    "Estados Unidos", "Canadá", "Reino Unido", "España",
-    "México", "Argentina", "Alemania", "Francia", "Colombia", "Chile"
-]
-
-CATEGORIAS_CUARTO = [
-    "Junior Suite Superior", "Junior Suite Premium",
-    "Ocean Front Suite", "Presidential Suite", "Deluxe Family Room"
-]
-
-SEGMENTOS_MERCADO = [
-    "Directo Web (bahia-principe.com)", "Privilege Club (Timeshare)",
-    "OTA (Booking / Expedia)", "Tour Operador Mayorista (TUI)"
-]
-
 
 # =====================================================================
 # POBLADO DE DIMENSIONES BASE (SEEDS)
@@ -128,12 +111,11 @@ SEGMENTOS_MERCADO = [
 
 def seed_dimensiones(session: Session) -> None:
     """
-    Inserta o actualiza los catálogos fijos de dimensiones:
+    Inserta o actualiza los catálogos fijos de dimensiones reales:
     - Dim_Hotel (5 hoteles)
     - Dim_Restaurante (20 restaurantes)
     - Dim_Horario (6 franjas / 3 turnos)
     - Dim_Tipo_Atencion (VIP, Fidelidad, etc.)
-    - Dim_Habitacion (muestra para escalabilidad futura)
     """
     # 1. Hoteles
     for h in HOTELES_CATALOGO:
@@ -182,22 +164,6 @@ def seed_dimensiones(session: Session) -> None:
             existente.prioridad_servicio = ta["prioridad_servicio"]
 
     session.flush()
-
-    # 5. Habitaciones (Demo escalabilidad)
-    habitaciones_count = session.query(DimHabitacion).count()
-    if habitaciones_count < 100:
-        for hotel in HOTELES_CATALOGO:
-            h_id = hotel["id_hotel"]
-            for num in range(101, 126):
-                hab = DimHabitacion(
-                    numero_habitacion=f"{h_id}{num}",
-                    id_hotel=h_id,
-                    tipo_categoria_cuarto=random.choice(CATEGORIAS_CUARTO),
-                    pais_origen_agrupado=random.choice(PAISES_ORIGEN),
-                    segmento_mercado=random.choice(SEGMENTOS_MERCADO)
-                )
-                session.add(hab)
-        session.flush()
 
 
 def seed_dim_tiempo(session: Session, start_date: date, end_date: date) -> None:
@@ -338,72 +304,97 @@ def hash_usuario(usuario: Any) -> str:
 # TRANSFORMACIÓN PRINCIPAL DEL DATAFRAME
 # =====================================================================
 
+def _extraer_serie_segura(df_in: pd.DataFrame, col_name: str) -> pd.Series:
+    """Extrae una Serie 1-D de un DataFrame, evitando errores si existen columnas duplicadas."""
+    val = df_in[col_name]
+    if isinstance(val, pd.DataFrame):
+        return val.iloc[:, 0]
+    return val
+
+
 def transformar_dataframe_transaccional(df_raw: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Aplica las reglas de negocio, limpieza y cálculo de métricas al DataFrame crudo:
-    1. Estandarización de nombres de columnas.
+    1. Estandarización y deduplicación de nombres de columnas.
     2. Parsing de fechas 'Fecha Servicio' a objeto date.
-    3. Conversión de campos numéricos (#Adultos, #Niños, #Bebés).
+    3. Conversión segura de campos numéricos (#Adultos, #Niños, #Bebés).
     4. Cálculo de 'total_pax = #Adultos + #Niños + #Bebés'.
     5. Mapeo de hoteles y cálculo de 'es_cross_dining = (Hotel != Hotel Res.)'.
     6. Identificación de requerimiento de periqueras.
-    7. Anonimización.
+    7. Anonimización y sanitización.
     """
     df = df_raw.copy()
 
-    # Normalizar columnas (limpiar espacios en encabezados)
+    # 1. Normalizar columnas (limpiar espacios en encabezados) y descartar vacías/unnamed
     df.columns = [str(c).strip() for c in df.columns]
+    df = df.loc[:, [c for c in df.columns if not str(c).startswith("Unnamed:") and str(c) != ""]]
 
-    # Mapeo de nombres alternativos en caso de ligeras variaciones
+    # Deduplicar columnas iniciales para evitar DataFrames anidados
+    df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
+    # Mapeo flexible de nombres alternativos
     rename_dict = {}
     for col in df.columns:
-        c_low = col.lower()
-        if "adult" in c_low and "#" in col:
+        c_low = col.lower().strip()
+        if ("adult" in c_low or "pax" in c_low) and "#adult" not in c_low:
             rename_dict[col] = "#Adultos"
-        elif "niñ" in c_low and "#" in col:
+        elif ("niñ" in c_low or "nin" in c_low or "child" in c_low) and "#niñ" not in c_low:
             rename_dict[col] = "#Niños"
-        elif "beb" in c_low and "#" in col:
+        elif ("beb" in c_low or "baby" in c_low or "infan" in c_low) and "#beb" not in c_low:
             rename_dict[col] = "#Bebés"
-        elif "fecha" in c_low and "serv" in c_low:
+        elif ("fecha" in c_low or "date" in c_low) and col != "Fecha Servicio":
             rename_dict[col] = "Fecha Servicio"
-        elif "hotel res" in c_low:
+        elif ("hotel res" in c_low or "hotel hosp" in c_low or "hotel orig" in c_low) and col != "Hotel Res.":
             rename_dict[col] = "Hotel Res."
-        elif col in ["Hotel", "hotel"]:
+        elif (c_low in ["hotel", "hotel ubicacion", "hotel restaurante", "hotel destino"]) and col != "Hotel":
             rename_dict[col] = "Hotel"
-        elif "serv" in c_low and "fecha" not in c_low:
+        elif ("serv" in c_low or "restauran" in c_low) and "fecha" not in c_low and col != "Servicio":
             rename_dict[col] = "Servicio"
-        elif "aten" in c_low:
+        elif ("aten" in c_low or "vip" in c_low) and col != "Atención":
             rename_dict[col] = "Atención"
-        elif "invitad" in c_low:
+        elif "invitad" in c_low and col != "Nº Habs. Invitadas":
             rename_dict[col] = "Nº Habs. Invitadas"
-    
+        elif ("id" == c_low or "folio" in c_low or "reserva" == c_low or "id reserva" in c_low) and col != "Id":
+            rename_dict[col] = "Id"
+        elif ("turno" in c_low) and col != "Turno":
+            rename_dict[col] = "Turno"
+        elif ("horario" in c_low or "hora" in c_low) and col != "Horario":
+            rename_dict[col] = "Horario"
+        elif ("remark" in c_low or "obs" in c_low or "coment" in c_low or "nota" in c_low) and col != "Remarks":
+            rename_dict[col] = "Remarks"
+
     if rename_dict:
         df = df.rename(columns=rename_dict)
 
+    # Deduplicar nuevamente por si el renombre agrupó columnas similares
+    df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
     # 1. Parsing de fechas
     if "Fecha Servicio" in df.columns:
-        df["Fecha Servicio"] = pd.to_datetime(df["Fecha Servicio"], errors="coerce").dt.date
+        serie_fecha = _extraer_serie_segura(df, "Fecha Servicio")
+        df["Fecha Servicio"] = pd.to_datetime(serie_fecha, errors="coerce").dt.date
     else:
         df["Fecha Servicio"] = date.today()
 
     # Descartar filas sin fecha válida
     df = df.dropna(subset=["Fecha Servicio"])
 
-    # 2. Métricas de Pax
+    # 2. Métricas de Pax (conversión 1-D segura a numérico)
     for col, default_val in [("#Adultos", 2), ("#Niños", 0), ("#Bebés", 0), ("Nº Habs. Invitadas", 0)]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(default_val).astype(int)
+            serie_pax = _extraer_serie_segura(df, col)
+            df[col] = pd.to_numeric(serie_pax, errors="coerce").fillna(default_val).astype(int)
         else:
             df[col] = default_val
 
     # Regla: mínimo 1 adulto por reserva si total pax es 0
-    df["#Adultos"] = df["#Adultos"].apply(lambda x: max(1, x) if x <= 0 else x)
+    df["#Adultos"] = _extraer_serie_segura(df, "#Adultos").apply(lambda x: max(1, x) if x <= 0 else x)
     df["total_pax"] = df["#Adultos"] + df["#Niños"] + df["#Bebés"]
 
     # 3. ID de Reserva
     if "Id" in df.columns:
-        df["id_reserva"] = pd.to_numeric(df["Id"], errors="coerce")
-        # Rellenar IDs nulos con números autoincrementales
+        serie_id = _extraer_serie_segura(df, "Id")
+        df["id_reserva"] = pd.to_numeric(serie_id, errors="coerce")
         mask_nan = df["id_reserva"].isna()
         if mask_nan.any():
             start_id = 900000
@@ -415,7 +406,7 @@ def transformar_dataframe_transaccional(df_raw: pd.DataFrame) -> Tuple[pd.DataFr
     # 4. Mapeo de Restaurantes
     col_rest = "Servicio" if "Servicio" in df.columns else "Restaurante"
     if col_rest in df.columns:
-        df["id_restaurante"] = df[col_rest].apply(mapear_codigo_restaurante)
+        df["id_restaurante"] = _extraer_serie_segura(df, col_rest).apply(mapear_codigo_restaurante)
     else:
         df["id_restaurante"] = "DPI"
 
@@ -423,16 +414,16 @@ def transformar_dataframe_transaccional(df_raw: pd.DataFrame) -> Tuple[pd.DataFr
     col_hotel_rest = "Hotel" if "Hotel" in df.columns else "Hotel Ubicacion"
     col_hotel_res = "Hotel Res." if "Hotel Res." in df.columns else "Hotel Origen"
 
-    hotel_ubicacion_series = df[col_hotel_rest].apply(mapear_codigo_hotel) if col_hotel_rest in df.columns else 1
-    hotel_hospedaje_series = df[col_hotel_res].apply(mapear_codigo_hotel) if col_hotel_res in df.columns else hotel_ubicacion_series
+    hotel_ubicacion_series = _extraer_serie_segura(df, col_hotel_rest).apply(mapear_codigo_hotel) if col_hotel_rest in df.columns else 1
+    hotel_hospedaje_series = _extraer_serie_segura(df, col_hotel_res).apply(mapear_codigo_hotel) if col_hotel_res in df.columns else hotel_ubicacion_series
 
     df["id_hotel_hospedaje"] = hotel_hospedaje_series
     df["id_hotel_restaurante"] = hotel_ubicacion_series
 
     # Regla de Cross-Dining: True si Hotel != Hotel Res.
     if "Cross" in df.columns:
-        # Si la columna viene en el archivo, verificar o complementar
-        df["es_cross_dining"] = (df["id_hotel_hospedaje"] != df["id_hotel_restaurante"]) | (df["Cross"].astype(str).str.upper().isin(["TRUE", "1", "SI", "YES"]))
+        serie_cross = _extraer_serie_segura(df, "Cross").astype(str).str.upper().isin(["TRUE", "1", "SI", "YES"])
+        df["es_cross_dining"] = (df["id_hotel_hospedaje"] != df["id_hotel_restaurante"]) | serie_cross
     else:
         df["es_cross_dining"] = df["id_hotel_hospedaje"] != df["id_hotel_restaurante"]
 
@@ -500,38 +491,51 @@ def cargar_en_base_de_datos(df_transformado: pd.DataFrame, session: Session) -> 
     Inserta o actualiza en lote los registros procesados en Fact_Reservas_Restaurantes.
     Asegura previamente la existencia de fechas en Dim_Tiempo.
     """
-    # 1. Asegurar fechas en Dim_Tiempo
     fechas_unicas = df_transformado["Fecha Servicio"].dropna().unique()
     if len(fechas_unicas) > 0:
         f_min = min(fechas_unicas)
         f_max = max(fechas_unicas)
         seed_dim_tiempo(session, f_min, f_max)
 
-    # 2. Cargar en Fact_Reservas_Restaurantes (Carga en lote de alto rendimiento)
     now_utc = datetime.now(timezone.utc)
     
-    # Preparar lista de diccionarios
     fact_records = []
     ids_a_cargar = []
     for _, row in df_transformado.iterrows():
         id_res = int(row["id_reserva"])
         ids_a_cargar.append(id_res)
+
+        hab_val = None
+        for col_h in ["Habitación", "Habitacion", "habitacion"]:
+            if col_h in row and pd.notna(row[col_h]):
+                hab_val = str(row[col_h]).strip()
+                break
+
         fact_records.append({
             "id_reserva": id_res,
             "id_fecha": row["Fecha Servicio"],
             "id_restaurante": row["id_restaurante"],
             "id_hotel_hospedaje": int(row["id_hotel_hospedaje"]),
+            "id_hotel_ubicacion": int(row["id_hotel_restaurante"]),
             "id_tipo_atencion": row["id_tipo_atencion"],
             "id_horario": row["id_horario"],
-            "id_habitacion": row["id_habitacion"],
+            "habitacion": hab_val,
+            "titular": row.get("Titular"),
+            "mesa": row.get("Mesa"),
             "num_adultos": int(row["#Adultos"]),
             "num_ninos": int(row["#Niños"]),
             "num_bebes": int(row["#Bebés"]),
             "total_pax": int(row["total_pax"]),
-            "habs_invitadas": float(row.get("Nº Habs. Invitadas", 0)),
+            "habs_invitadas": float(row.get("Nº Habs. Invitadas", 0) or row.get("Habs. Invitadas", 0) or 0),
             "es_cross_dining": bool(row["es_cross_dining"]),
-            "requiere_periquera": bool(row["requiere_periquera"]),
-            "observaciones_limpias": row.get("observaciones_limpias", ""),
+            "cross": bool(row["Cross"]) if pd.notna(row.get("Cross")) else False,
+            "cargado": bool(row["Cargado"]) if pd.notna(row.get("Cargado")) else False,
+            "actions": bool(row["Actions"]) if pd.notna(row.get("Actions")) else False,
+            "remarks": row.get("Remarks"),
+            "obs": row.get("Obs."),
+            "usuario": row.get("Usuario"),
+            "origen": row.get("Origen"),
+            "tarea": row.get("Tarea"),
             "fecha_carga_etl": now_utc
         })
 
@@ -549,57 +553,325 @@ def cargar_en_base_de_datos(df_transformado: pd.DataFrame, session: Session) -> 
     return len(fact_records)
 
 
+def leer_archivo_transaccional(archivo: Union[str, io.BytesIO], es_csv: Optional[bool] = None) -> pd.DataFrame:
+    """Lee archivos Excel (.xlsx/.xls) o CSV con detección automática de separador y codificación."""
+    es_archivo_csv = es_csv is True or (isinstance(archivo, str) and archivo.lower().endswith(".csv"))
+
+    if es_archivo_csv:
+        encodings = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
+        separators = [None, ";", ",", "\t"]
+        for enc in encodings:
+            for sep in separators:
+                try:
+                    if hasattr(archivo, "seek"):
+                        archivo.seek(0)
+                    df = pd.read_csv(archivo, sep=sep, engine="python", encoding=enc, dtype=str)
+                    if df.shape[1] > 1 or (df.shape[1] == 1 and df.shape[0] > 0 and ";" not in str(df.columns[0]) and "," not in str(df.columns[0])):
+                        return df
+                except Exception:
+                    continue
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_csv(archivo, dtype=str)
+
+    try:
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_excel(archivo)
+    except Exception:
+        return leer_archivo_transaccional(archivo, es_csv=True)
+
+
+def _leer_bytes(archivo) -> bytes:
+    """Lee contenido como bytes desde un objeto archivo o ruta string."""
+    if isinstance(archivo, (str, bytes, os.PathLike)):
+        with open(archivo, "rb") as f:
+            return f.read()
+    if hasattr(archivo, "seek"):
+        archivo.seek(0)
+    if hasattr(archivo, "read"):
+        return archivo.read()
+    raise ValueError("Tipo de archivo no soportado.")
+
+
+def _parsear_sql_inserts(sql_text: str) -> pd.DataFrame:
+    """
+    Extrae datos de sentencias INSERT INTO en un archivo SQL.
+    Compatible con dumps de MySQL, PostgreSQL y SQLite.
+    """
+    import re as _re
+    patron = _re.compile(
+        r"INSERT\s+INTO\s+[`\"']?(\w+)[`\"']?\s*\(([^)]+)\)\s*VALUES\s*(.+?)(?=;|INSERT|$)",
+        _re.IGNORECASE | _re.DOTALL,
+    )
+    patron_valores = _re.compile(r"\(([^()]+)\)")
+    patron_valor = _re.compile(r"'([^']*)'|(\d+(?:\.\d+)?)|NULL", _re.IGNORECASE)
+
+    todas_filas: List[Dict] = []
+    columnas_ref: List[str] = []
+
+    for match in patron.finditer(sql_text):
+        raw_cols = match.group(2)
+        raw_vals_block = match.group(3)
+        columnas = [c.strip().strip("`\"'") for c in raw_cols.split(",")]
+        if not columnas_ref:
+            columnas_ref = columnas
+
+        for val_match in patron_valores.finditer(raw_vals_block):
+            val_texto = val_match.group(1)
+            valores = [
+                (m.group(1) if m.group(1) is not None else (m.group(2) if m.group(2) is not None else None))
+                for m in patron_valor.finditer(val_texto)
+            ]
+            if len(valores) == len(columnas):
+                todas_filas.append(dict(zip(columnas, valores)))
+
+    if not todas_filas:
+        raise ValueError("No se encontraron sentencias INSERT INTO en el archivo SQL.")
+
+    return pd.DataFrame(todas_filas, columns=columnas_ref if columnas_ref else None)
+
+
+def detectar_formato_y_leer(archivo, nombre_archivo: str = "") -> pd.DataFrame:
+    """
+    Lee un archivo en cualquier formato soportado, detectando automáticamente
+    el tipo por extensión y contenido.
+
+    Formatos soportados:
+      Tabulares  : .csv, .tsv, .txt (delimitado), .xlsx, .xls, .ods
+      Bases datos: .sql (INSERT INTO), .db / .sqlite / .sqlite3
+      Datos      : .json, .jsonl, .parquet, .feather, .orc
+      Texto plano: cualquier archivo de texto con datos separados
+    """
+    ext = os.path.splitext(nombre_archivo.lower())[1] if nombre_archivo else ""
+    encodings = ["utf-8-sig", "utf-8", "latin-1", "cp1252"]
+
+    # ── Parquet / Feather / ORC ────────────────────────────────────────────────
+    if ext == ".parquet":
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_parquet(archivo)
+
+    if ext == ".feather":
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_feather(archivo)
+
+    if ext == ".orc":
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_orc(archivo)
+
+    # ── Excel / ODS ────────────────────────────────────────────────────────────
+    if ext in (".xlsx", ".xls", ".ods"):
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_excel(archivo)
+
+    # ── SQL (sentencias INSERT INTO) ───────────────────────────────────────────
+    if ext == ".sql":
+        raw = _leer_bytes(archivo)
+        for enc in encodings:
+            try:
+                sql_text = raw.decode(enc)
+                return _parsear_sql_inserts(sql_text)
+            except Exception:
+                continue
+        raise ValueError("No se pudo decodificar el archivo SQL.")
+
+    # ── SQLite / DB ────────────────────────────────────────────────────────────
+    if ext in (".db", ".sqlite", ".sqlite3"):
+        import sqlite3
+        import tempfile
+        raw = _leer_bytes(archivo)
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = tmp.name
+        try:
+            con = sqlite3.connect(tmp_path)
+            tablas = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", con)["name"].tolist()
+            if not tablas:
+                raise ValueError("El archivo SQLite no contiene tablas.")
+            mejor = max(tablas, key=lambda t: pd.read_sql(f'SELECT COUNT(*) as n FROM "{t}"', con)["n"].iloc[0])
+            df = pd.read_sql(f'SELECT * FROM "{mejor}"', con)
+            con.close()
+            return df
+        finally:
+            os.unlink(tmp_path)
+
+    # ── JSON / JSONL ───────────────────────────────────────────────────────────
+    if ext == ".json":
+        raw = _leer_bytes(archivo)
+        for enc in encodings:
+            try:
+                return pd.read_json(io.BytesIO(raw), encoding=enc)
+            except Exception:
+                continue
+        raise ValueError("No se pudo leer el archivo JSON.")
+
+    if ext == ".jsonl":
+        raw = _leer_bytes(archivo)
+        for enc in encodings:
+            try:
+                return pd.read_json(io.BytesIO(raw), lines=True, encoding=enc)
+            except Exception:
+                continue
+        raise ValueError("No se pudo leer el archivo JSONL.")
+
+    # ── CSV / TSV / TXT y cualquier texto delimitado ───────────────────────────
+    separators = [",", ";", "\t", "|"]
+    if ext == ".tsv":
+        separators = ["\t", ",", ";", "|"]
+
+    raw = _leer_bytes(archivo)
+    for enc in encodings:
+        for sep in separators:
+            try:
+                df = pd.read_csv(io.BytesIO(raw), sep=sep, engine="python", encoding=enc, on_bad_lines="skip", dtype=str)
+                if df.shape[1] > 1 and df.shape[0] > 0:
+                    return df
+            except Exception:
+                continue
+
+    # Último recurso: intentar Excel
+    try:
+        if hasattr(archivo, "seek"):
+            archivo.seek(0)
+        return pd.read_excel(archivo)
+    except Exception:
+        pass
+
+    raise ValueError(f"No se pudo leer el archivo '{nombre_archivo}'. Formato no soportado o archivo dañado.")
+
+
 def ejecutar_etl_desde_archivo(
     archivo: Union[str, io.BytesIO],
     es_csv: Optional[bool] = None,
     reemplazar: bool = False,
+    nombre_archivo: str = "",
 ) -> Dict[str, Any]:
     """
-    Función principal de ejecución del pipeline ETL desde un archivo subido (.xlsx o .csv).
+    Función principal de ejecución del pipeline ETL desde un archivo subido.
+    Soporta: .csv, .xlsx, .xls, .tsv, .txt, .sql, .db, .sqlite, .json, .jsonl, .parquet, .feather, .orc
     """
-    # 1. Extracción
-    if isinstance(archivo, str):
-        if archivo.endswith(".csv") or es_csv is True:
-            df_raw = pd.read_csv(archivo)
-        else:
-            df_raw = pd.read_excel(archivo)
+    # The same normalized loader is used by folder-based and Streamlit ingestion.
+    if nombre_archivo:
+        df_raw = detectar_formato_y_leer(archivo, nombre_archivo)
     else:
-        # BytesIO proveniente de st.file_uploader
-        try:
-            df_raw = pd.read_excel(archivo)
-        except Exception:
-            archivo.seek(0)
-            df_raw = pd.read_csv(archivo)
-
-    # 2. Transformación
-    df_transformado, resumen = transformar_dataframe_transaccional(df_raw)
-
+        df_raw = leer_archivo_transaccional(archivo, es_csv=es_csv)
     if reemplazar:
         limpiar_base_datos()
+    from etl.etl_pipeline import cargar_dataframe, transformar_datos
 
-    # 3. Carga en BD
-    with get_db_session() as session:
-        seed_dimensiones(session)
-        registros_cargados = cargar_en_base_de_datos(df_transformado, session)
-        resumen["registros_cargados_bd"] = registros_cargados
+    restaurant = os.path.splitext(os.path.basename(nombre_archivo))[0] if nombre_archivo else "Sin nombre"
+    restaurant = re.sub(r"\s+20\d{2}$", "", restaurant).strip()
+    transformed = transformar_datos(df_raw, restaurant)
+    inserted = cargar_dataframe(df_raw, restaurant)
+    pax = int(transformed["pax_total"].sum()) if not transformed.empty else 0
+    dates = transformed["fecha_servicio"].dropna() if not transformed.empty else pd.Series(dtype=object)
+    return {
+        "total_registros": len(transformed),
+        "total_pax": pax,
+        "fecha_min": dates.min() if not dates.empty else None,
+        "fecha_max": dates.max() if not dates.empty else None,
+        "fechas_unicas": int(dates.nunique()),
+        "registros_cargados_bd": inserted,
+        "_ids_reserva": transformed["id"].astype(int).tolist(),
+    }
 
-    return resumen
+
+def ejecutar_etl_carga_masiva(
+    archivos: List,
+    reemplazar_primero: bool = False,
+) -> Dict[str, Any]:
+    """
+    Carga masiva sin límite: procesa múltiples archivos en secuencia y consolida resultados.
+
+    Parámetros
+    ----------
+    archivos : list
+        Lista de objetos archivo (Streamlit UploadedFile u objetos con .name / .read).
+    reemplazar_primero : bool
+        Si True, vacía la BD antes de cargar el primer archivo.
+
+    Retorna
+    -------
+    dict con:
+        total_archivos      : int  — archivos enviados
+        total_registros     : int  — filas cargadas en BD
+        archivos_exitosos   : list[str]        — nombres de archivos OK
+        archivos_con_error  : list[tuple]      — (nombre, mensaje_error)
+        fecha_min           : date | None
+        fecha_max           : date | None
+        fechas_unicas       : int
+    """
+    resumen_global: Dict[str, Any] = {
+        "total_archivos": len(archivos),
+        "total_registros": 0,
+        "ids_duplicados": 0,
+        "filas_validas_por_archivo": 0,
+        "archivos_exitosos": [],
+        "archivos_con_error": [],
+        "fecha_min": None,
+        "fecha_max": None,
+        "fechas_unicas": 0,
+    }
+
+    limpiar_hecho = False
+    ids_reserva = set()
+
+    for archivo in archivos:
+        nombre = getattr(archivo, "name", "") or ""
+        try:
+            if reemplazar_primero and not limpiar_hecho:
+                limpiar_base_datos()
+                limpiar_hecho = True
+
+            resumen = ejecutar_etl_desde_archivo(
+                archivo,
+                nombre_archivo=nombre,
+                reemplazar=False,
+            )
+
+            ids_reserva.update(resumen.get("_ids_reserva", []))
+            resumen_global["filas_validas_por_archivo"] += resumen.get("total_registros", 0)
+            resumen_global["archivos_exitosos"].append(nombre)
+
+            f_min = resumen.get("fecha_min")
+            f_max = resumen.get("fecha_max")
+            if f_min:
+                resumen_global["fecha_min"] = (
+                    min(resumen_global["fecha_min"], f_min)
+                    if resumen_global["fecha_min"]
+                    else f_min
+                )
+            if f_max:
+                resumen_global["fecha_max"] = (
+                    max(resumen_global["fecha_max"], f_max)
+                    if resumen_global["fecha_max"]
+                    else f_max
+                )
+
+        except Exception as exc:
+            resumen_global["archivos_con_error"].append((nombre, str(exc)))
+
+    if resumen_global["fecha_min"] and resumen_global["fecha_max"]:
+        delta = resumen_global["fecha_max"] - resumen_global["fecha_min"]
+        resumen_global["fechas_unicas"] = delta.days + 1
+
+    resumen_global["total_registros"] = len(ids_reserva)
+    resumen_global["ids_duplicados"] = resumen_global["filas_validas_por_archivo"] - len(ids_reserva)
+    del resumen_global["filas_validas_por_archivo"]
+
+    return resumen_global
 
 
 def limpiar_base_datos() -> None:
-    """Elimina todos los datos cargados y conserva las tablas para una nueva carga."""
-    engine = get_engine()
-    tables = inspect(engine).get_table_names()
-    managed_tables = [
-        "Fact_Reservas_Restaurantes", "Dim_Habitacion", "Dim_Tiempo", "Dim_Horario",
-        "Dim_Tipo_Atencion", "Dim_Restaurante", "Dim_Hotel", "reservas_servicios",
-        "usuarios", "turnos_horarios", "tipos_atencion", "servicios", "hoteles",
-    ]
-    existing = [table for table in managed_tables if table in tables]
-    if existing:
-        quoted = ", ".join(f'"{table}"' for table in existing)
-        with engine.begin() as connection:
-            connection.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+    """Vacía las cuatro dimensiones y la tabla de hechos en orden compatible con sus FK."""
+    init_db()
+    with get_db_session() as session:
+        for model in (FactReservasRestaurantes, DimTiempo, DimAtencion, DimServicio, DimHotel):
+            session.query(model).delete(synchronize_session=False)
 
 
 # =====================================================================
@@ -757,11 +1029,9 @@ def inicializar_demo_y_cargar_bd(num_registros: int = 1250) -> Dict[str, Any]:
     # Ejecutar ETL y cargar en BD
     print("[*] Ejecutando ETL y cargando en Esquema en Estrella...")
     df_transformado, resumen = transformar_dataframe_transaccional(df_mock)
+    from etl.etl_pipeline import cargar_dataframe
 
-    with get_db_session() as session:
-        seed_dimensiones(session)
-        registros = cargar_en_base_de_datos(df_transformado, session)
-        resumen["registros_cargados_bd"] = registros
+    resumen["registros_cargados_bd"] = cargar_dataframe(df_mock, "Demo")
 
     print(f"[+] Carga completada exitosamente. Resumen: {resumen}")
     return resumen

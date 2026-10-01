@@ -53,7 +53,7 @@ class ExecutiveRepository(
         try {
             val response = apiService.getKpiSummary()
             if (response.isSuccessful) {
-                val remoteKpis = response.body() ?: emptyList()
+                val remoteKpis = response.body()?.cards ?: emptyList()
                 val entities = remoteKpis.map {
                     KpiEntity(it.title, it.value, it.trend, it.isPositiveTrend, it.colorHex)
                 }

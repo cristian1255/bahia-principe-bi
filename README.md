@@ -238,20 +238,48 @@ Publica `main.py` como servicio Python con el comando `uvicorn main:app --host 0
 
 ---
 
-## 7. 📁 Estructura del Repositorio
+## 7. 📁 Estructura Integral del Repositorio
+
+El proyecto está organizado de manera modular separando claramente el Dashboard Web, los Pipelines ETL, el Backend API, la Base de Datos y la Aplicación Móvil:
 
 ```plaintext
 bahia-principe-bi/
-├── .streamlit/
-│   └── config.toml          # Tema visual corporativo Bahía Príncipe (Navy & Gold)
-├── config_db.py             # Modelos SQLAlchemy 2.0 y gestión de conexión dual (SQLite/PostgreSQL)
-├── etl_pipeline.py          # Pipeline ETL, validación, anonimización y generador mock
-├── app.py                   # Aplicación Web Interactiva Streamlit con 7 módulos analíticos
-├── requirements.txt         # Dependencias del proyecto
-├── sample_reservas.csv      # Archivo de datos de muestra para pruebas manuales de carga
-├── sample_reservas.xlsx     # Archivo Excel de muestra con 1,250 reservas
-└── README.md                # Documentación técnica y manual de despliegue
+│
+├── 📊 DASHBOARD WEB & ANALÍTICA (STREAMLIT)
+│   ├── app.py                      # Aplicación visual Streamlit con 7 módulos de analítica
+│   ├── forecast_model.py           # Red neuronal (MLPRegressor) para pronóstico de demanda
+│   ├── config_db.py                # Conexión ORM y Esquema en Estrella (Star Schema) para el Dashboard
+│   ├── models/                     # Carpeta de almacenamiento para modelos entrenados (.pkl)
+│   └── .streamlit/config.toml      # Configuración de tema visual (Navy #0B1528, Oro #C5A059)
+│
+├── ⚙️ PIPELINES ETL (EXTRACCIÓN, TRANSFORMACIÓN Y CARGA)
+│   ├── etl_pipeline.py             # ETL principal: procesa Excel/CSV, anonimiza y carga en Star Schema
+│   ├── etl/
+│   │   └── etl_pipeline.py         # ETL secundario: carga reservas en PostgreSQL relacional normalizado
+│   └── scripts/
+│       ├── run_etl_cloud.py        # ETL automatizado para ejecución periódica en GitHub Actions
+│       └── instalar_en_android.bat # Instalador automatizado del APK en dispositivos Android por USB
+│
+├── 🚀 BACKEND REST API (FASTAPI & IA GEMINI)
+│   ├── main.py                     # API REST FastAPI (puerto 8000) con Google Gemini y endpoints de KPIs
+│   └── database.py                 # Conexión a PostgreSQL Local y consultas analíticas para la API
+│
+├── 📱 APLICACIÓN MÓVIL (ANDROID STUDIO)
+│   └── android_project/            # Proyecto Android nativo (Kotlin + Jetpack Compose + Retrofit)
+│
+├── 🛠️ UTILIDADES, PRUEBAS Y ENTORNO
+│   ├── start_all.bat               # Lanzador unificado de todo el sistema (ETL + FastAPI + Streamlit)
+│   ├── test_suite.py               # Suite de pruebas unitarias automatizadas (unittest)
+│   ├── requirements.txt            # Dependencias Python del backend y dashboard
+│   ├── .env.example                # Plantilla de variables de entorno (DATABASE_URL, GEMINI_API_KEY)
+│   └── bahia_principe_bi.db        # Base de datos SQLite local generada para pruebas inmediatas
+│
+└── 📄 MANUALES Y GUÍAS
+    ├── README.md                   # Esta guía general de arquitectura y despliegue
+    ├── DOCUMENTACION_SISTEMA.md   # Manual técnico integral del sistema analítico
+    └── README_USB_INSTALL.md       # Instrucciones paso a paso para desplegar en celular Android
 ```
+
 
 ---
 
