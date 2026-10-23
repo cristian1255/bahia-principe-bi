@@ -102,9 +102,20 @@ def _make_features(history: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-def train_neural_forecast(df: pd.DataFrame, validation_days: int = 14) -> ForecastResult:
-    """Entrena una red neuronal MLP con separación temporal de validación."""
-    history = _normalise_history(df)
+def train_neural_forecast(df: pd.DataFrame, validation_days: int = 14, max_history_days: int = 180) -> ForecastResult:
+    """Entrena una red neuronal MLP con separación temporal de validación usando solo el histórico reciente para acelerar el cálculo."""
+    if df.empty:
+        raise ValueError("No hay registros válidos para entrenar el pronóstico.")
+
+    df2 = df.copy()
+    if "id_fecha" in df2.columns and df2["id_fecha"].notna().any():
+        min_date = pd.to_datetime(df2["id_fecha"]).dt.normalize().min()
+        max_date = pd.to_datetime(df2["id_fecha"]).dt.normalize().max()
+        if (max_date - min_date).days > max_history_days:
+            cutoff = max_date - pd.Timedelta(days=max_history_days)
+            df2 = df2[pd.to_datetime(df2["id_fecha"]).dt.normalize() >= cutoff].copy()
+
+    history = _normalise_history(df2)
     feature_frame = _make_features(history)
     if len(feature_frame) < 30:
         raise ValueError("Se necesitan al menos 30 observaciones diarias con rezagos para entrenar.")
@@ -151,6 +162,9 @@ def forecast_future(result: ForecastResult, horizon_days: int) -> pd.DataFrame:
     future_dates = pd.date_range(last_date + pd.Timedelta(days=1), periods=horizon_days, freq="D")
     working = history.copy()
     rows: List[Dict[str, Any]] = []
+    restaurant_to_code = {
+        restaurant: idx for idx, restaurant in enumerate(history["id_restaurante"].drop_duplicates())
+    }
 
     for current_date in future_dates:
         feature_rows: List[Dict[str, Any]] = []
@@ -162,11 +176,7 @@ def forecast_future(result: ForecastResult, horizon_days: int) -> pd.DataFrame:
                 padded = np.pad(series, (28 - len(series), 0), mode="constant")
             else:
                 padded = series[-28:]
-            restaurant_code = float(
-                pd.factorize(history["id_restaurante"])[0][
-                    list(history["id_restaurante"].unique()).index(group.id_restaurante)
-                ]
-            )
+            restaurant_code = float(restaurant_to_code.get(group.id_restaurante, 0))
             day_of_year = current_date.dayofyear
             feature_rows.append({
                 "day_sin": np.sin(2 * np.pi * day_of_year / 365.25),

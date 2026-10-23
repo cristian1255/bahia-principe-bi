@@ -26,6 +26,10 @@ import numpy as np
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
+# Compatibility layer: the project tests and callers expect the ETL API to be exposed
+# from the root module as well as the package module.
+from etl.etl_pipeline import *
+
 from config_db import (
     get_engine,
     get_db_session,

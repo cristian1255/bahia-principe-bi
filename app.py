@@ -66,6 +66,23 @@ def get_streamlit_run_command() -> List[str]:
     ]
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def entrenar_pronostico_cacheado(data: pd.DataFrame):
+    from forecast_model import save_forecast_model, train_neural_forecast
+
+    result = train_neural_forecast(data)
+    save_forecast_model(result)
+    return result
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def generar_pronostico_cacheado(data: pd.DataFrame, horizon_days: int) -> pd.DataFrame:
+    from forecast_model import forecast_future
+
+    result = entrenar_pronostico_cacheado(data)
+    return forecast_future(result, horizon_days)
+
+
 # =====================================================================
 # CONFIGURACIÓN DE PÁGINA Y ESTILOS CSS CORPORATIVOS
 # =====================================================================
@@ -183,12 +200,13 @@ st.markdown("""
     }
 
     .executive-hero {
-        background: linear-gradient(115deg, #0B1528 0%, #1E3A8A 65%, #0D9488 130%);
+        background: #0F766E;
         color: #FFFFFF;
-        border-radius: 12px;
+        border-left: 6px solid #C2410C;
+        border-radius: 8px;
         padding: 24px 28px;
         margin: 0 0 22px;
-        box-shadow: 0 10px 25px rgba(11, 21, 40, 0.2);
+        box-shadow: none;
     }
     .executive-hero h1, .executive-hero p, .executive-hero span { 
         color: #FFFFFF !important; 
@@ -311,7 +329,7 @@ def cargar_dataset_completo() -> pd.DataFrame:
     """
     Carga el dataset completo de reservas desde el Esquema en Estrella (BI)
     unido con las dimensiones reales de hoteles, restaurantes, horarios y atenciones.
-    Asegura que las tablas existan llamando a init_db().
+    Se actualiza cada 60 segundos para reflejar nuevas filas en la base de datos.
     """
     columnas_obligatorias = [
         "id_reserva", "id_fecha", "anio", "mes", "dia", "dia_semana", "es_fin_de_semana", "temporada",
@@ -352,10 +370,29 @@ def cargar_dataset_completo() -> pd.DataFrame:
         """
         df_star = pd.read_sql(text(query_star), con=engine_star)
         if not df_star.empty:
+            hotel_names = {}
+            for item in HOTELES_CATALOGO:
+                for alias in (item["id_hotel"], item["codigo_origen"], item["nombre_hotel"]):
+                    hotel_names[str(alias).strip().lower()] = item["nombre_hotel"]
+            attention_names = {
+                item["id_tipo_atencion"]: item["categoria_atencion"]
+                for item in TIPOS_ATENCION_CATALOGO
+            }
+            for hotel_column in ("hotel_restaurante", "hotel_hospedaje"):
+                df_star[hotel_column] = df_star[hotel_column].map(
+                    lambda value: hotel_names.get(str(value).strip().lower(), value)
+                )
+            mapped_attention = df_star["id_tipo_atencion"].map(attention_names)
+            df_star["categoria_atencion"] = mapped_attention.fillna(df_star["categoria_atencion"])
+            df_star["categoria_atencion"] = df_star["categoria_atencion"].replace(attention_names)
+            df_star["id_tipo_atencion"] = mapped_attention.fillna(df_star["categoria_atencion"])
             df_star["categoria_atencion"] = (
                 df_star["categoria_atencion"].fillna("Sin especificar").astype(str)
             )
+            df_star["id_tipo_atencion"] = df_star["categoria_atencion"]
             df_star["id_fecha"] = pd.to_datetime(df_star["id_fecha"]).dt.date
+            df_star["horario_texto"] = df_star["horario_texto"].fillna("Horario no registrado").astype(str)
+            df_star["franja_horaria"] = df_star["franja_horaria"].fillna("Horario no registrado").astype(str)
             df_star["es_fin_de_semana"] = pd.to_datetime(df_star["id_fecha"]).dt.weekday.isin([4, 5, 6])
             df_star["temporada"] = df_star["mes"].map(
                 lambda month: "Alta" if month in (12, 1, 2, 3, 4, 7, 8) else ("Media" if month in (5, 6) else "Baja")
@@ -400,6 +437,116 @@ def asegurar_base_datos_inicializada():
 asegurar_base_datos_inicializada()
 df_master = cargar_dataset_completo()
 
+filtros_pendientes = st.session_state.pop("_filtros_asistente_pendientes", {})
+for widget_key, widget_value in filtros_pendientes.items():
+    st.session_state[widget_key] = widget_value
+
+
+def obtener_rango_db() -> Tuple[date, date]:
+    """Devuelve el rango real de fechas que hay en la base de datos actual."""
+    try:
+        df_actual = cargar_dataset_completo().copy()
+    except Exception:
+        df_actual = df_master.copy()
+
+    if df_actual.empty:
+        hoy = date.today()
+        return hoy, hoy
+
+    min_date = df_actual["id_fecha"].min()
+    max_date = df_actual["id_fecha"].max()
+    return min_date, max_date
+
+
+def normalizar_estado_multiselect(widget_key: str, options: List[Any]) -> None:
+    """Drop stale selections and represent an all-values selection as empty."""
+    if widget_key not in st.session_state:
+        return
+    current_values = st.session_state[widget_key]
+    valid_values = [value for value in current_values if value in options]
+    if options and len(valid_values) == len(options):
+        valid_values = []
+    st.session_state[widget_key] = valid_values
+
+
+def filtrar_analisis(data: pd.DataFrame, section: str, fields: List[str]) -> pd.DataFrame:
+    """Render independent, applicable filters for one analysis section."""
+    if data.empty:
+        return data.copy()
+
+    date_min = pd.to_datetime(data["id_fecha"]).dt.date.min()
+    date_max = pd.to_datetime(data["id_fecha"]).dt.date.max()
+    applied_key = f"filtros_aplicados_{section}"
+    saved = st.session_state.get(applied_key, {"dates": (date_min, date_max)})
+    options_by_field = {
+        "hotel": ("Hotel", "hotel_restaurante"),
+        "restaurant": ("Restaurante", "nombre_restaurante"),
+        "shift": ("Horario", "turno"),
+        "attention": ("Tipo de atención", "categoria_atencion"),
+        "origin": ("Hotel donde se hospeda", "hotel_hospedaje"),
+        "destination": ("Hotel del restaurante", "hotel_restaurante"),
+        "cross": ("Origen del huésped", "es_cross_dining"),
+    }
+
+    with st.expander("Filtros de este análisis", expanded=False):
+        with st.form(f"form_filtros_{section}"):
+            date_range = st.date_input(
+                "Periodo",
+                value=saved.get("dates", (date_min, date_max)),
+                min_value=date_min,
+                max_value=date_max,
+                key=f"widget_fechas_{section}",
+            )
+            selections = {}
+            filter_columns = st.columns(2)
+            for index, field in enumerate(fields):
+                label, column = options_by_field[field]
+                options = [False, True] if field == "cross" else sorted(data[column].dropna().unique().tolist(), key=str)
+                default = saved.get(field, [])
+                default = [value for value in default if value in options]
+                if field == "shift":
+                    schedule_labels = {}
+                    for value in options:
+                        mode = data.loc[data[column] == value, "horario_texto"].dropna().mode()
+                        schedule_labels[value] = f"Turno {value} · {mode.iloc[0]}" if not mode.empty else f"Turno {value}"
+                    formatter = lambda value, labels=schedule_labels: labels.get(value, str(value))
+                elif field == "cross":
+                    formatter = lambda value: "De otro hotel" if value else "Del mismo hotel"
+                else:
+                    formatter = str
+                with filter_columns[index % 2]:
+                    selections[field] = st.multiselect(
+                        label,
+                        options=options,
+                        default=default,
+                        format_func=formatter,
+                        key=f"widget_{field}_{section}",
+                    )
+            submitted = st.form_submit_button("Aplicar filtros", type="primary")
+
+    if submitted:
+        if not isinstance(date_range, (tuple, list)) or len(date_range) != 2:
+            date_range = (date_min, date_max)
+        st.session_state[applied_key] = {"dates": tuple(date_range), **selections}
+        saved = st.session_state[applied_key]
+
+    start, end = saved.get("dates", (date_min, date_max))
+    dates = pd.to_datetime(data["id_fecha"]).dt.date
+    result = data[(dates >= start) & (dates <= end)].copy()
+    for field in fields:
+        selection = saved.get(field, [])
+        if selection:
+            result = result[result[options_by_field[field][1]].isin(selection)]
+    return result
+
+
+CONFIG_GRAFICAS = {
+    "displayModeBar": True,
+    "displaylogo": False,
+    "scrollZoom": True,
+    "toImageButtonOptions": {"format": "png", "filename": "grafica_bahia_principe", "scale": 2},
+}
+
 
 # =====================================================================
 # BARRA LATERAL (SIDEBAR): CARGA, FILTROS Y ESTADO
@@ -417,7 +564,7 @@ with st.sidebar:
 
     # 1. GESTIÓN DE FUENTE DE DATOS
     st.markdown("---")
-    st.subheader("📂 Ingesta de Datos (ETL)")
+    st.subheader("📂 Carga y actualización de datos")
 
     # Formatos aceptados (sin límite de archivos ni tamaño por archivo)
     FORMATOS_ACEPTADOS = [
@@ -492,150 +639,51 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"❌ Error en la carga masiva: {e}")
 
-    col_btn1, col_btn2, col_btn3 = st.columns(3)
-    with col_btn1:
-        if st.button("🔄 Recargar Demo", use_container_width=True, help="Regenera 1,250 reservas sintéticas en la base de datos"):
-            with st.spinner("Regenerando datos sintéticos..."):
-                inicializar_demo_y_cargar_bd(1250)
+    with st.expander("Herramientas internas", expanded=False):
+        st.caption("Acciones de mantenimiento de la base de datos.")
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        with col_btn1:
+            if st.button("🔄 Recargar Demo", use_container_width=True, help="Regenera 1,250 reservas sintéticas en la base de datos"):
+                with st.spinner("Regenerando datos sintéticos..."):
+                    inicializar_demo_y_cargar_bd(1250)
+                    st.cache_data.clear()
+                    st.rerun()
+        with col_btn2:
+            if st.button("🧹 Limpiar Caché", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
-    with col_btn2:
-        if st.button("🧹 Limpiar Caché", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-    with col_btn3:
-        if st.button("🗑️ Vaciar BD", use_container_width=True):
-            from etl_pipeline import limpiar_base_datos
-            limpiar_base_datos()
-            st.cache_data.clear()
-            st.success("Base vaciada. Ya puedes subir el histórico anual.")
-            st.rerun()
+        with col_btn3:
+            if st.button("🗑️ Vaciar BD", use_container_width=True):
+                from etl_pipeline import limpiar_base_datos
+                limpiar_base_datos()
+                st.cache_data.clear()
+                st.success("Base vaciada. Ya puedes subir el histórico anual.")
+                st.rerun()
 
-    # Estado de la Base de Datos
+        db_url_str = get_database_url()
+        tipo_bd = "PostgreSQL Local" if "localhost" in db_url_str or "127.0.0.1" in db_url_str else ("PostgreSQL Cloud" if "postgresql" in db_url_str else "SQLite Local")
+        st.caption(f"Origen: {tipo_bd} · {len(df_master):,} reservas cargadas")
+
     st.markdown("---")
-    db_url_str = get_database_url()
-    tipo_bd = "PostgreSQL Local" if "localhost" in db_url_str or "127.0.0.1" in db_url_str else ("PostgreSQL Cloud" if "postgresql" in db_url_str else "SQLite Local")
-    total_reg = len(df_master)
-    st.markdown(f"""
-        <div style="background: rgba(15, 27, 48, 0.8); border: 1px solid rgba(197, 160, 89, 0.3); border-radius: 8px; padding: 10px 14px; font-size: 0.8rem;">
-            <div style="color: #94A3B8;">Motor de Datos: <span style="color: #38BDF8; font-weight: 600;">{tipo_bd}</span></div>
-            <div style="color: #94A3B8;">Reservas en PostgreSQL: <span style="color: #34D399; font-weight: 700;">{total_reg:,}</span></div>
-            <div style="color: #94A3B8;">Estado: <span style="color: #34D399; font-weight: 700;">● Online 24/7</span></div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # 2. FILTROS GLOBALES INTERACTIVOS
-    st.markdown("---")
-    st.subheader("🎯 Filtros Globales")
-
-    if not df_master.empty:
-        # Filtro de Fechas
-        min_date = df_master["id_fecha"].min()
-        max_date = df_master["id_fecha"].max()
-
-        fecha_rango = st.date_input(
-            "Rango de Fechas:",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
-            help="Filtra las reservas por fecha de servicio"
-        )
-        if isinstance(fecha_rango, (tuple, list)) and len(fecha_rango) == 2:
-            f_inicio, f_fin = fecha_rango
-        else:
-            f_inicio, f_fin = min_date, max_date
-
-        # Filtro de Hoteles (Hospedaje o Ubicación del Restaurante)
-        todos_hoteles = sorted(df_master["hotel_restaurante"].unique().tolist())
-        hoteles_sel = st.multiselect(
-            "Hotel (Ubicación Restaurante):",
-            options=todos_hoteles,
-            default=todos_hoteles,
-            help="Filtra por el hotel donde se encuentra físicamente el restaurante"
-        )
-
-        # Filtro de Restaurantes
-        restaurantes_disponibles = sorted(
-            df_master[df_master["hotel_restaurante"].isin(hoteles_sel)]["nombre_restaurante"].unique().tolist()
-        )
-        restaurantes_sel = st.multiselect(
-            "Restaurante de Especialidad:",
-            options=restaurantes_disponibles,
-            default=restaurantes_disponibles,
-            help="Selecciona uno o más de los 20 restaurantes de especialidad"
-        )
-
-        # Filtro de Turno
-        turnos_disponibles = sorted(df_master["turno"].unique().tolist())
-        turnos_sel = st.multiselect(
-            "Turno de Servicio:",
-            options=turnos_disponibles,
-            default=turnos_disponibles,
-            format_func=lambda x: f"Turno {x}"
-        )
-
-        # Filtro de Tipo de Atención
-        atenciones_disponibles = sorted(df_master["categoria_atencion"].unique().tolist())
-        atenciones_sel = st.multiselect(
-            "Categoría de Atención:",
-            options=atenciones_disponibles,
-            default=atenciones_disponibles
-        )
-
-        # Toggle Cross-Dining
-        filtro_cross = st.radio(
-            "Modalidad de Comensal:",
-            options=["Todos", "Solo Cross-Dining (Inter-Hotel)", "Solo Huéspedes Locales"],
-            index=0
-        )
-    else:
-        f_inicio, f_fin = date.today(), date.today()
-        hoteles_sel, restaurantes_sel, turnos_sel, atenciones_sel = [], [], [], []
-        filtro_cross = "Todos"
+    st.caption("Ajusta cada análisis por separado desde los filtros dentro de cada apartado.")
 
 
-# =====================================================================
-# APLICACIÓN DE FILTROS AL DATAFRAME
-# =====================================================================
-
+min_date, max_date = obtener_rango_db()
+f_inicio, f_fin = min_date, max_date
 df_filtrado = df_master.copy()
-if not df_filtrado.empty:
-    # 1. Rango de Fechas
-    df_filtrado = df_filtrado[
-        (df_filtrado["id_fecha"] >= f_inicio) & (df_filtrado["id_fecha"] <= f_fin)
-    ]
-    # 2. Hoteles y Restaurantes
-    if hoteles_sel:
-        df_filtrado = df_filtrado[df_filtrado["hotel_restaurante"].isin(hoteles_sel)]
-    if restaurantes_sel:
-        df_filtrado = df_filtrado[df_filtrado["nombre_restaurante"].isin(restaurantes_sel)]
-    # 3. Turnos
-    if turnos_sel:
-        df_filtrado = df_filtrado[df_filtrado["turno"].isin(turnos_sel)]
-    # 4. Atención
-    if atenciones_sel:
-        df_filtrado = df_filtrado[df_filtrado["categoria_atencion"].isin(atenciones_sel)]
-    # 5. Cross-Dining
-    if filtro_cross == "Solo Cross-Dining (Inter-Hotel)":
-        df_filtrado = df_filtrado[df_filtrado["es_cross_dining"] == True]
-    elif filtro_cross == "Solo Huéspedes Locales":
-        df_filtrado = df_filtrado[df_filtrado["es_cross_dining"] == False]
-
-
-# =====================================================================
-# ENCABEZADO PRINCIPAL DE LA APLICACIÓN
-# =====================================================================
+hoteles_incluidos = df_filtrado["hotel_restaurante"].nunique() if not df_filtrado.empty else 0
+restaurantes_incluidos = df_filtrado["nombre_restaurante"].nunique() if not df_filtrado.empty else 0
 
 st.markdown(f"""
     <div class="executive-hero">
-        <span style="font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em;">BAHÍA PRÍNCIPE • BUSINESS INTELLIGENCE A&B</span>
-        <h1>Centro Ejecutivo de Demanda y Operación</h1>
-        <p>Convertimos reservas históricas en decisiones: capacidad, personal, servicio y previsión de demanda.</p>
+        <span style="font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em;">BAHÍA PRÍNCIPE • RESTAURANTES</span>
+        <h1>Demanda y experiencia de nuestros huéspedes</h1>
+        <p>Un resumen sencillo de las reservas, los días con más actividad y lo que se espera para el futuro.</p>
         <div style="display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; font-size: 0.82rem;">
             <span>📅 {f_inicio} → {f_fin}</span>
-            <span>🏨 {len(hoteles_sel)}/5 hoteles activos</span>
-            <span>🍽️ {len(restaurantes_sel)}/20 restaurantes activos</span>
-            <span>📊 {len(df_filtrado):,} reservas analizadas</span>
+            <span>🏨 {hoteles_incluidos} hoteles disponibles</span>
+            <span>🍽️ {restaurantes_incluidos} restaurantes disponibles</span>
+            <span>📊 {len(df_filtrado):,} reservas en esta vista</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -646,13 +694,9 @@ st.markdown(f"""
 # =====================================================================
 
 tabs = st.tabs([
-    "📊 1. Resumen Ejecutivo & KPIs",
-    "⏰ 2. Yield Management & Horarios",
-    "👑 3. Segmentación VIP & Familias",
-    "🏨 4. Flujo Inter-Hotel (Cross-Dining)",
-    "🤖 5. Modelo Predictivo & Simulador",
-    "🔮 6. Escalabilidad Futura (Habitaciones)",
-    "📥 7. Exportación & Reportes"
+    "Resumen",
+    "Operación y pronóstico",
+    "Preguntas y datos"
 ])
 
 
@@ -660,6 +704,8 @@ tabs = st.tabs([
 # TAB 1: RESUMEN EJECUTIVO Y KPIS EN TIEMPO REAL
 # =====================================================================
 with tabs[0]:
+    df_filtrado = filtrar_analisis(df_master, "resumen", ["hotel", "restaurant"])
+    st.caption(f"{len(df_filtrado):,} reservas en el periodo y selección de este resumen.")
     if df_filtrado.empty:
         st.warning("⚠️ No se encontraron reservas que coincidan con los filtros seleccionados.")
     else:
@@ -673,14 +719,23 @@ with tabs[0]:
         total_cross = int(df_filtrado["es_cross_dining"].sum())
         pct_cross = round((total_cross / total_reservas) * 100, 1) if total_reservas > 0 else 0
 
-        # Cálculo de ocupación global estimada
-        # Capacidad total = suma de capacidades de restaurantes activos * turnos seleccionados * días filtrados
-        dias_totales = max(1, (f_fin - f_inicio).days + 1)
+        fechas_resumen = pd.to_datetime(df_filtrado["id_fecha"]).dt.date
+        dias_totales = max(1, (fechas_resumen.max() - fechas_resumen.min()).days + 1)
+        turnos_resumen = max(1, df_filtrado["turno"].nunique())
+        metrica_resumen = st.radio(
+            "Mostrar las comparaciones por",
+            options=["Comensales", "Reservas"],
+            horizontal=True,
+            key="metrica_resumen",
+        )
+        metric_column = "total_pax" if metrica_resumen == "Comensales" else "reservas"
+        metric_label = metrica_resumen
         cap_instalada_diaria = df_filtrado.groupby(["id_restaurante", "capacidad_maxima_pax"]).size().reset_index()["capacidad_maxima_pax"].sum()
         # Capacidad estimada considerando turnos
-        cap_total_periodo = cap_instalada_diaria * len(turnos_sel) * dias_totales
-        ocupacion_global_pct = round((total_pax / cap_total_periodo * 100), 1) if cap_total_periodo > 0 else 0
-        ocupacion_global_pct = min(100.0, ocupacion_global_pct)
+        cap_total_periodo = cap_instalada_diaria * turnos_resumen * dias_totales
+        ocupacion_global_pct = round((total_pax / cap_total_periodo * 100), 1) if cap_total_periodo > 0 else None
+        if ocupacion_global_pct is not None:
+            ocupacion_global_pct = min(100.0, ocupacion_global_pct)
 
         # Fila 1: Tarjetas de Métricas Ejecutivas
         c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -705,7 +760,7 @@ with tabs[0]:
                 <div class="metric-card">
                     <div class="metric-title">Adultos vs Niños/Bebés</div>
                     <div class="metric-value">{total_adultos:,}</div>
-                    <div class="metric-sub">{total_ninos + total_bebes:,} menores ({round((total_ninos+total_bebes)/total_pax*100, 1)}%)</div>
+                    <div class="metric-sub">{total_ninos + total_bebes:,} menores ({round((total_ninos+total_bebes)/total_pax*100, 1) if total_pax else 0}%)</div>
                 </div>
             """, unsafe_allow_html=True)
         with c4:
@@ -725,12 +780,12 @@ with tabs[0]:
                 </div>
             """, unsafe_allow_html=True)
         with c6:
-            badge_color = "ok" if ocupacion_global_pct < 75 else ("warning" if ocupacion_global_pct <= 90 else "danger")
+            badge_color = "warning" if ocupacion_global_pct is None else ("ok" if ocupacion_global_pct < 75 else ("warning" if ocupacion_global_pct <= 90 else "danger"))
             st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">Ocupación A&B Est.</div>
-                    <div class="metric-value">{ocupacion_global_pct}%</div>
-                    <div class="metric-sub"><span class="badge-{badge_color}">Semáforo Global</span></div>
+                    <div class="metric-title">Ocupación estimada</div>
+                    <div class="metric-value">{f"{ocupacion_global_pct}%" if ocupacion_global_pct is not None else "Sin dato"}</div>
+                    <div class="metric-sub"><span class="badge-{badge_color}">{"Aforo pendiente" if ocupacion_global_pct is None else "Estimación orientativa"}</span></div>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -762,7 +817,7 @@ with tabs[0]:
         # Pax por noche
         df_rest_agg["pax_por_noche"] = df_rest_agg["total_pax_rest"] / df_rest_agg["dias_efectivos"]
         # Porcentaje de ocupación sobre capacidad por noche (asumiendo turnos activos)
-        cap_noche = df_rest_agg["capacidad_maxima_pax"] * max(1, len(turnos_sel))
+        cap_noche = df_rest_agg["capacidad_maxima_pax"] * turnos_resumen
         df_rest_agg["pct_ocupacion"] = np.where(
             cap_noche > 0,
             ((df_rest_agg["pax_por_noche"] / cap_noche) * 100).round(1),
@@ -809,7 +864,8 @@ with tabs[0]:
         # Fila 3: Gráficos de Tendencias Temporales y Distribución
         g1, g2 = st.columns([1.3, 1])
         with g1:
-            st.subheader("📈 Tendencia Diaria de Comensales y Reservas")
+            st.subheader("📈 Actividad por día")
+            st.caption("Cada barra representa cuántos comensales hubo ese día; la línea cuenta las reservas.")
             df_tiempo_trend = df_filtrado.groupby("id_fecha").agg(
                 total_pax=("total_pax", "sum"),
                 total_reservas=("id_reserva", "count"),
@@ -844,19 +900,26 @@ with tabs[0]:
                 margin=dict(l=40, r=40, t=30, b=30),
                 height=380
             )
-            st.plotly_chart(fig_trend, use_container_width=True)
+            st.plotly_chart(fig_trend, use_container_width=True, config=CONFIG_GRAFICAS)
             st.markdown("<div class='section-note'><strong>Cómo leerla:</strong> las barras muestran comensales por día y la línea muestra reservas. Picos simultáneos indican necesidad de reforzar capacidad y personal.</div>", unsafe_allow_html=True)
 
         with g2:
-            st.subheader("🥧 Distribución de Demanda por Hotel")
-            df_hotel_pie = df_filtrado.groupby("hotel_restaurante")["total_pax"].sum().reset_index()
+            st.subheader(f"{metric_label} por hotel")
+            pie_metric_column = "total_pax" if metric_column == "total_pax" else "reservas"
+            pie_source_column = "total_pax" if pie_metric_column == "total_pax" else "id_reserva"
+            pie_aggregation = "sum" if pie_metric_column == "total_pax" else "count"
+            df_hotel_pie = df_filtrado.groupby("hotel_restaurante").agg(
+                **{pie_metric_column: (pie_source_column, pie_aggregation)}
+            ).reset_index()
             fig_pie = px.pie(
                 df_hotel_pie,
                 names="hotel_restaurante",
-                values="total_pax",
+                values=pie_metric_column,
                 hole=0.45,
+                labels={pie_metric_column: metric_label, "hotel_restaurante": "Hotel"},
                 color_discrete_sequence=["#C5A059", "#38BDF8", "#10B981", "#818CF8", "#F472B6"]
             )
+            fig_pie.update_traces(textinfo="label+percent", hovertemplate="%{label}<br>%{value:,.0f} " + metric_label.lower() + "<extra></extra>")
             fig_pie.update_layout(
                 paper_bgcolor="rgba(255,255,255,0.7)",
                 font=dict(color="#0F172A", family="Plus Jakarta Sans, sans-serif"),
@@ -864,17 +927,92 @@ with tabs[0]:
                 height=380,
                 legend=dict(orientation="v", yanchor="middle", y=0.5, font=dict(color="#0F172A"))
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, use_container_width=True, config=CONFIG_GRAFICAS)
             st.markdown("<div class='section-note'><strong>Resultado:</strong> permite localizar qué hoteles concentran el consumo y dónde conviene redistribuir promociones, mesas o recursos.</div>", unsafe_allow_html=True)
+
+        st.markdown("### Más formas de leer la actividad")
+        tipo_comparacion = st.radio(
+            "Tipo de gráfica",
+            options=["Barras", "Línea"],
+            horizontal=True,
+            key="tipo_grafica_resumen",
+        )
+        chart_month, chart_restaurant = st.columns(2)
+        monthly_data = df_filtrado.assign(
+            mes=pd.to_datetime(df_filtrado["id_fecha"]).dt.to_period("M").astype(str)
+        ).groupby("mes", as_index=False).agg(
+            total_pax=("total_pax", "sum"),
+            reservas=("id_reserva", "count"),
+        )
+        top_restaurants = (
+            df_filtrado.groupby("nombre_restaurante", as_index=False).agg(
+                total_pax=("total_pax", "sum"),
+                reservas=("id_reserva", "count"),
+            )
+            .assign(valor=lambda frame: frame["total_pax"] if metric_column == "total_pax" else frame["reservas"])
+            .sort_values("valor", ascending=True)
+            .tail(10)
+        )
+        with chart_month:
+            st.subheader(f"{metric_label} por mes")
+            st.caption("Permite comparar cómo cambia la actividad durante el año.")
+            monthly_metric_column = "total_pax" if metric_column == "total_pax" else "reservas"
+            month_chart_builder = px.bar if tipo_comparacion == "Barras" else px.line
+            fig_month = month_chart_builder(
+                monthly_data,
+                x="mes",
+                y=monthly_metric_column,
+                labels={"mes": "Mes", monthly_metric_column: metric_label},
+                color_discrete_sequence=["#0F766E"],
+            )
+            if tipo_comparacion == "Línea":
+                fig_month.update_traces(mode="lines+markers")
+            fig_month.update_layout(height=340, margin=dict(l=20, r=15, t=15, b=20), showlegend=False)
+            st.plotly_chart(fig_month, use_container_width=True, config=CONFIG_GRAFICAS)
+        with chart_restaurant:
+            st.subheader(f"Los 10 restaurantes con más {metric_label.lower()}")
+            st.caption("Las barras más largas indican mayor actividad en el periodo elegido.")
+            if tipo_comparacion == "Barras":
+                fig_restaurants = px.bar(
+                    top_restaurants,
+                    x="valor",
+                    y="nombre_restaurante",
+                    orientation="h",
+                    labels={"nombre_restaurante": "Restaurante", "valor": metric_label},
+                    color_discrete_sequence=["#B45309"],
+                )
+            else:
+                fig_restaurants = px.scatter(
+                    top_restaurants,
+                    x="valor",
+                    y="nombre_restaurante",
+                    labels={"nombre_restaurante": "Restaurante", "valor": metric_label},
+                    color_discrete_sequence=["#B45309"],
+                )
+            fig_restaurants.update_layout(height=340, margin=dict(l=20, r=15, t=15, b=20), showlegend=False)
+            st.plotly_chart(fig_restaurants, use_container_width=True, config=CONFIG_GRAFICAS)
 
 
 # =====================================================================
 # TAB 2: ANÁLISIS DE CAPACIDAD Y HORARIOS CRÍTICOS (YIELD MANAGEMENT)
 # =====================================================================
 with tabs[1]:
+    df_filtrado = filtrar_analisis(df_master, "horarios", ["hotel", "restaurant", "shift"])
+    st.caption(f"{len(df_filtrado):,} reservas incluidas en este análisis.")
+    if not df_filtrado.empty:
+        report_dates = pd.to_datetime(df_filtrado["id_fecha"]).dt.date
+        f_inicio, f_fin = report_dates.min(), report_dates.max()
     if df_filtrado.empty:
         st.warning("⚠️ No hay datos disponibles para el análisis de capacidad.")
     else:
+        metrica_operacion = st.radio(
+            "Medir la actividad por",
+            options=["Comensales", "Reservas"],
+            horizontal=True,
+            key="metrica_operacion",
+        )
+        operacion_columna = "total_pax" if metrica_operacion == "Comensales" else "id_reserva"
+        operacion_agregacion = "sum" if operacion_columna == "total_pax" else "count"
         st.subheader("⏰ Mapa de Calor de Ocupación por Turno y Restaurante")
         st.caption("Permite a la Dirección de A&B balancear las cargas horarias y mitigar sobreventas en franjas pico.")
         st.markdown("<div class='section-note'><strong>Qué buscamos:</strong> encontrar la combinación restaurante-turno que concentra la demanda. Los colores intensos requieren redistribución de reservas, mesas o personal.</div>", unsafe_allow_html=True)
@@ -883,14 +1021,14 @@ with tabs[1]:
         pivot_ocup = df_filtrado.pivot_table(
             index="nombre_restaurante",
             columns="franja_horaria",
-            values="total_pax",
-            aggfunc="sum",
+            values=operacion_columna,
+            aggfunc=operacion_agregacion,
             fill_value=0
         )
 
         fig_heat = px.imshow(
             pivot_ocup,
-            labels=dict(x="Franja Horaria / Turno", y="Restaurante", color="Pax Totales"),
+            labels=dict(x="Horario", y="Restaurante", color=metrica_operacion),
             x=pivot_ocup.columns,
             y=pivot_ocup.index,
             color_continuous_scale="YlOrRd",
@@ -905,7 +1043,7 @@ with tabs[1]:
         )
         fig_heat.update_xaxes(tickfont=dict(color="#334155", size=11), title_font=dict(color="#0F172A"))
         fig_heat.update_yaxes(tickfont=dict(color="#334155", size=11), title_font=dict(color="#0F172A"))
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.plotly_chart(fig_heat, use_container_width=True, config=CONFIG_GRAFICAS)
 
         st.markdown("---")
         c_cap1, c_cap2 = st.columns(2)
@@ -913,7 +1051,7 @@ with tabs[1]:
         with c_cap1:
             st.subheader("🔥 Identificación de Horas Pico vs Horas Valle")
             df_turno_agg = df_filtrado.groupby(["turno", "franja_horaria"]).agg(
-                pax_total=("total_pax", "sum"),
+                pax_total=(operacion_columna, operacion_agregacion),
                 reservas=("id_reserva", "count"),
                 promedio_pax_mesa=("total_pax", "mean")
             ).reset_index().sort_values("pax_total", ascending=False)
@@ -922,12 +1060,11 @@ with tabs[1]:
                 df_turno_agg,
                 x="franja_horaria",
                 y="pax_total",
-                color="turno",
-                text="pax_total",
-                color_continuous_scale=["#38BDF8", "#C5A059", "#EF4444"],
-                labels={"pax_total": "Comensales (Pax)", "franja_horaria": "Franja Horaria"}
+                color="franja_horaria",
+                color_discrete_sequence=["#0F766E", "#B45309", "#2563EB", "#BE123C", "#4D7C0F", "#7C2D12"],
+                labels={"pax_total": metrica_operacion, "franja_horaria": "Horario"}
             )
-            fig_turnos.update_traces(textposition="outside")
+            fig_turnos.update_traces(hovertemplate=f"%{{x}}<br>{metrica_operacion}: %{{y:,.0f}}<extra></extra>")
             fig_turnos.update_layout(
                 paper_bgcolor="rgba(255,255,255,0.7)",
                 plot_bgcolor="rgba(255,255,255,0.7)",
@@ -937,7 +1074,7 @@ with tabs[1]:
                 margin=dict(l=30, r=30, t=30, b=30),
                 height=350
             )
-            st.plotly_chart(fig_turnos, use_container_width=True)
+            st.plotly_chart(fig_turnos, use_container_width=True, config=CONFIG_GRAFICAS)
 
             # Alerta ejecutiva de Yield Management
             if not df_turno_agg.empty:
@@ -945,9 +1082,9 @@ with tabs[1]:
                 hora_valle = df_turno_agg.iloc[-1]["franja_horaria"]
                 st.markdown(f"""
                     <div class="vip-alert-card">
-                        <strong>📌 Hallazgo de Yield Management:</strong><br>
-                        • <strong>Horario Pico Crítico:</strong> <span style="color: #DC2626; font-weight: 700;">{hora_pico}</span> concentra el {round(df_turno_agg.iloc[0]['pax_total']/total_pax*100, 1)}% de la demanda.<br>
-                        • <strong>Horario Valle Disponible:</strong> <span style="color: #059669; font-weight: 700;">{hora_valle}</span> presenta {round(df_turno_agg.iloc[-1]['pax_total']/total_pax*100, 1)}% de demanda (oportunidad de redistribución e incentivos a huéspedes).
+                        <strong>📌 Horarios destacados:</strong><br>
+                        • <strong>Mayor actividad:</strong> <span style="color: #DC2626; font-weight: 700;">{hora_pico}</span> ({round(df_turno_agg.iloc[0]['pax_total']/max(1, df_turno_agg['pax_total'].sum())*100, 1)}% de {metrica_operacion.lower()}).<br>
+                        • <strong>Menor actividad:</strong> <span style="color: #059669; font-weight: 700;">{hora_valle}</span> ({round(df_turno_agg.iloc[-1]['pax_total']/max(1, df_turno_agg['pax_total'].sum())*100, 1)}% de {metrica_operacion.lower()}).
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -984,7 +1121,7 @@ with tabs[1]:
                 height=300,
                 legend=dict(font=dict(color="#0F172A"))
             )
-            st.plotly_chart(fig_mesas, use_container_width=True)
+            st.plotly_chart(fig_mesas, use_container_width=True, config=CONFIG_GRAFICAS)
 
             st.dataframe(
                 df_mesas_agg.style.format({"Nº Reservas": "{:,}", "Porcentaje": "{:.1f}%"}),
@@ -996,7 +1133,10 @@ with tabs[1]:
 # =====================================================================
 # TAB 3: SEGMENTACIÓN DE CLIENTES Y NIVELES DE ATENCIÓN (VIP & FAMILIAS)
 # =====================================================================
-with tabs[2]:
+with tabs[1]:
+    st.divider()
+    df_filtrado = filtrar_analisis(df_master, "huespedes", ["hotel", "restaurant", "attention"])
+    st.caption(f"{len(df_filtrado):,} reservas incluidas en este análisis.")
     if df_filtrado.empty:
         st.warning("⚠️ No hay registros para segmentación de clientes.")
     else:
@@ -1032,7 +1172,7 @@ with tabs[2]:
                 height=320,
                 legend=dict(orientation="h", y=-0.1)
             )
-            st.plotly_chart(fig_atencion, use_container_width=True)
+            st.plotly_chart(fig_atencion, use_container_width=True, config=CONFIG_GRAFICAS)
 
         with col_seg2:
             st.markdown("#### 👶 Requerimientos Especiales: Mobiliario Infantil")
@@ -1093,7 +1233,7 @@ with tabs[2]:
                 "nombre_restaurante": "Restaurante",
                 "horario_texto": "Horario",
                 "categoria_atencion": "Categoría",
-                "id_tipo_atencion": "Tipo Atenc.",
+                "id_tipo_atencion": "Tipo de atención",
                 "hotel_hospedaje": "Hotel Origen",
                 "num_adultos": "Adultos",
                 "num_ninos": "Niños",
@@ -1110,7 +1250,10 @@ with tabs[2]:
 # =====================================================================
 # TAB 4: ANÁLISIS DE FLUJO INTER-HOTEL (CROSS-DINING)
 # =====================================================================
-with tabs[3]:
+with tabs[1]:
+    st.divider()
+    df_filtrado = filtrar_analisis(df_master, "movilidad", ["origin", "destination", "cross"])
+    st.caption(f"{len(df_filtrado):,} reservas incluidas en este análisis.")
     if df_filtrado.empty:
         st.warning("⚠️ No hay datos para el análisis de Cross-Dining.")
     else:
@@ -1158,7 +1301,7 @@ with tabs[3]:
             height=450,
             margin=dict(l=20, r=20, t=40, b=20)
         )
-        st.plotly_chart(fig_sankey, use_container_width=True)
+        st.plotly_chart(fig_sankey, use_container_width=True, config=CONFIG_GRAFICAS)
 
         st.markdown("---")
         c_cd1, c_cd2 = st.columns(2)
@@ -1176,7 +1319,6 @@ with tabs[3]:
                 pivot_cross,
                 labels=dict(x="Hotel Restaurante (Destino)", y="Hotel Hospedaje (Origen)", color="Pax"),
                 color_continuous_scale="Blues",
-                text_auto=True
             )
             fig_cross_heat.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -1185,7 +1327,7 @@ with tabs[3]:
                 margin=dict(l=50, r=20, t=20, b=50),
                 height=340
             )
-            st.plotly_chart(fig_cross_heat, use_container_width=True)
+            st.plotly_chart(fig_cross_heat, use_container_width=True, config=CONFIG_GRAFICAS)
 
         with c_cd2:
             st.subheader("🧲 Restaurantes 'Imán' de Comensales Externos")
@@ -1213,37 +1355,44 @@ with tabs[3]:
                 height=340,
                 yaxis=dict(autorange="reversed")
             )
-            st.plotly_chart(fig_iman, use_container_width=True)
+            st.plotly_chart(fig_iman, use_container_width=True, config=CONFIG_GRAFICAS)
 
 
 # =====================================================================
 # TAB 5: MODELO PREDICTIVO Y SIMULADOR DE DEMANDA
 # =====================================================================
-with tabs[4]:
-    st.subheader("🧠 Pronóstico Ejecutivo con Red Neuronal")
-    st.caption("Entrenamiento temporal por restaurante y turno, con predicción diaria para días, meses y años.")
-    st.markdown("<div class='section-note'><strong>Cómo funciona:</strong> la red aprende estacionalidad, tendencia y comportamiento de los últimos 7, 14 y 28 días. Se valida con fechas posteriores al entrenamiento para medir su capacidad real.</div>", unsafe_allow_html=True)
+with tabs[1]:
+    st.divider()
+    df_filtrado = filtrar_analisis(df_master, "pronostico", ["hotel", "restaurant", "shift"])
+    st.caption(f"{len(df_filtrado):,} reservas incluidas en este análisis.")
+    st.subheader("Pronóstico de comensales")
+    st.caption("La red neuronal estima la demanda futura con el historial del periodo y los filtros seleccionados.")
+    st.markdown("<div class='section-note'><strong>Cómo leerlo:</strong> la línea azul muestra datos registrados y la dorada es una estimación. El error de validación ayuda a entender cuánto puede desviarse; no es una garantía.</div>", unsafe_allow_html=True)
 
-    if len(df_master) < 50:
-        st.warning("Se requieren al menos 50 reservas históricas para entrenar el modelo predictivo.")
+    if len(df_filtrado) < 50:
+        st.warning("Esta selección tiene menos de 50 reservas. Amplía el periodo o quita filtros para preparar el pronóstico.")
     else:
-        from forecast_model import forecast_future, save_forecast_model, train_neural_forecast
-
         horizon_label = st.selectbox(
             "Horizonte de planificación",
             options=["7 días", "30 días", "90 días", "6 meses", "1 año", "2 años", "5 años"],
-            index=2,
+            index=1,
         )
         horizon_days = {"7 días": 7, "30 días": 30, "90 días": 90, "6 meses": 182, "1 año": 365, "2 años": 730, "5 años": 1825}[horizon_label]
 
-        with st.spinner("Entrenando red neuronal y calculando validación temporal..."):
-            try:
-                resultado_red = train_neural_forecast(df_master)
-                save_forecast_model(resultado_red)
-                df_futuro = forecast_future(resultado_red, horizon_days)
-            except ValueError as error:
-                st.error(str(error))
-                df_futuro = pd.DataFrame()
+        if st.button("Calcular pronóstico", type="primary"):
+            st.session_state["mostrar_pronostico"] = True
+
+        df_futuro = pd.DataFrame()
+        if st.session_state.get("mostrar_pronostico", False):
+            with st.spinner("Preparando la previsión con la red neuronal..."):
+                try:
+                    resultado_red = entrenar_pronostico_cacheado(df_filtrado)
+                    df_futuro = generar_pronostico_cacheado(df_filtrado, horizon_days)
+                except ValueError as error:
+                    st.error(str(error))
+
+        if not st.session_state.get("mostrar_pronostico", False):
+            st.info("Elige el periodo de planificación y pulsa «Calcular pronóstico» para generar la estimación.")
 
         if not df_futuro.empty:
             metric_1, metric_2, metric_3, metric_4 = st.columns(4)
@@ -1252,15 +1401,44 @@ with tabs[4]:
             metric_3.metric("Error RMSE validación", f"{resultado_red.metrics['rmse']:.1f} pax")
             metric_4.metric("Horizonte", horizon_label)
 
-            st.markdown("#### 📈 Demanda diaria prevista")
-            df_proj_dia = df_futuro.groupby("fecha", as_index=False)["pax_predichos"].sum()
-            df_hist_14 = df_master.groupby("id_fecha", as_index=False)["total_pax"].sum().tail(14)
+            st.markdown("#### Demanda registrada y estimada, día por día")
+            df_hist_real = df_filtrado.groupby("id_fecha", as_index=False)["total_pax"].sum().sort_values("id_fecha").reset_index(drop=True)
+            df_proj_dia = df_futuro.groupby("fecha", as_index=False)["pax_predichos"].sum().rename(columns={"fecha": "id_fecha"})
+
+            # Mostrar todo el historial disponible en la BD y luego el pronóstico futuro.
+            df_hist_real["id_fecha"] = pd.to_datetime(df_hist_real["id_fecha"])
+            df_proj_dia["id_fecha"] = pd.to_datetime(df_proj_dia["id_fecha"])
+
             fig_proj = go.Figure()
-            fig_proj.add_trace(go.Scatter(x=df_hist_14["id_fecha"], y=df_hist_14["total_pax"], mode="lines+markers", name="Histórico real", line=dict(color="#38BDF8", width=3)))
-            fig_proj.add_trace(go.Scatter(x=df_proj_dia["fecha"], y=df_proj_dia["pax_predichos"], mode="lines", name="Pronóstico neuronal", line=dict(color="#C5A059", width=2)))
-            fig_proj.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#F8FAFC"), yaxis_title="Comensales por día", height=360)
-            st.plotly_chart(fig_proj, use_container_width=True)
-            st.markdown("<div class='section-note'><strong>Cómo usar el resultado:</strong> selecciona el horizonte de planificación y usa los picos diarios para anticipar compras, horarios, mesas y dotación de sala/cocina.</div>", unsafe_allow_html=True)
+            fig_proj.add_trace(go.Scatter(
+                x=df_hist_real["id_fecha"],
+                y=df_hist_real["total_pax"],
+                mode="lines+markers",
+                name="Histórico real",
+                line=dict(color="#38BDF8", width=3)
+            ))
+            if not df_proj_dia.empty:
+                fig_proj.add_trace(go.Scatter(
+                    x=df_proj_dia["id_fecha"],
+                    y=df_proj_dia["pax_predichos"],
+                    mode="lines",
+                    name="Pronóstico neuronal",
+                    line=dict(color="#C5A059", width=2)
+                ))
+
+            fig_proj.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#1F2937"),
+                yaxis_title="Comensales por día",
+                height=360,
+                xaxis_title="Fecha",
+                margin=dict(l=45, r=20, t=20, b=45),
+            )
+            fig_proj.update_xaxes(showgrid=True, gridcolor="#E5E7EB", title_font=dict(color="#1F2937"), tickfont=dict(color="#374151"))
+            fig_proj.update_yaxes(showgrid=True, gridcolor="#E5E7EB", title_font=dict(color="#1F2937"), tickfont=dict(color="#374151"))
+            st.plotly_chart(fig_proj, use_container_width=True, config=CONFIG_GRAFICAS)
+            st.markdown("<div class='section-note'><strong>Para planificar:</strong> usa los días estimados como referencia para preparar compras, horarios, mesas y personal. Compara siempre la previsión con las reservas confirmadas.</div>", unsafe_allow_html=True)
 
             st.markdown("#### 📊 Resumen ejecutivo mensual")
             resumen_mensual = df_futuro.groupby("mes", as_index=False).agg(
@@ -1320,69 +1498,69 @@ with tabs[4]:
                 st.success("✅ **Operación Fluida:** Ocupación dentro de los límites estándar de servicio.")
 
 
-# =====================================================================
-# TAB 6: ESCALABILIDAD FUTURA (DEMO HABITACIONES Y ORIGEN)
-# =====================================================================
-with tabs[5]:
-    st.subheader("🛌 Análisis de Habitaciones")
-    st.caption("Reservas y comensales agrupados por habitación, a partir de los datos disponibles en el CSV.")
-
-    df_hab = cargar_demo_habitaciones()
-    if df_hab.empty:
-        st.info("Cargando estructura demostrativa de habitaciones...")
-    else:
-        st.info("Los archivos actuales no incluyen país de origen ni categoría de habitación. Esos análisis estarán disponibles cuando se integre esa información desde el PMS/CRM.")
-        h1, h2 = st.columns(2)
-        with h1:
-            st.markdown("#### Habitaciones con más comensales")
-            df_pais = df_hab.nlargest(10, "pax").sort_values("pax")
-
-            fig_pais = px.bar(
-                df_pais,
-                x="pax",
-                y="habitacion",
-                orientation="h",
-                color="pax",
-                labels={"pax": "Pax reservados", "habitacion": "Habitación"},
-                color_continuous_scale="Peach",
-            )
-            fig_pais.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#F8FAFC"),
-                margin=dict(l=30, r=30, t=20, b=30),
-                height=320,
-                yaxis=dict(autorange="reversed")
-            )
-            st.plotly_chart(fig_pais, use_container_width=True)
-
-        with h2:
-            st.markdown("#### Habitaciones con más reservas")
-            df_cat = df_hab.nlargest(10, "reservas").sort_values("reservas")
-
-            fig_cat = px.bar(
-                df_cat,
-                x="reservas",
-                y="habitacion",
-                orientation="h",
-                color="reservas",
-                labels={"reservas": "Reservas", "habitacion": "Habitación"},
-                color_continuous_scale="Teal",
-            )
-            fig_cat.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#F8FAFC"),
-                margin=dict(l=20, r=20, t=20, b=20),
-                height=320
-            )
-            st.plotly_chart(fig_cat, use_container_width=True)
-
-
 
 # =====================================================================
-# TAB 7: EXPORTACIÓN Y REPORTES
+# TAB 7: ASISTENTE DE PREGUNTAS Y FILTROS
 # =====================================================================
-with tabs[6]:
+with tabs[2]:
+    df_filtrado = filtrar_analisis(df_master, "datos", ["hotel", "restaurant", "shift", "attention", "cross"])
+    from dashboard_assistant import responder_consulta
+
+    st.subheader("Pregúntale a tus datos")
+    st.caption("Escribe una pregunta sencilla sobre las reservas. Las respuestas se calculan aquí mismo con los datos seleccionados.")
+    st.info("Puedes preguntar, por ejemplo: «¿Qué restaurante tuvo más comensales?», «¿Cuántas reservas hubo en agosto?» o «Filtra por turno 2». También puedes pedir «restablece filtros».")
+
+    if "conversacion_dashboard" not in st.session_state:
+        st.session_state["conversacion_dashboard"] = []
+
+    for message in st.session_state["conversacion_dashboard"]:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    pregunta = st.chat_input("Pregunta por comensales, reservas, hoteles, restaurantes o meses")
+    if pregunta:
+        respuesta, filtros = responder_consulta(pregunta, df_filtrado, df_master)
+        st.session_state["conversacion_dashboard"].append({"role": "user", "content": pregunta})
+        st.session_state["conversacion_dashboard"].append({"role": "assistant", "content": respuesta})
+
+        if filtros:
+            applied = dict(st.session_state.get("filtros_aplicados_datos", {}))
+            widget_updates = {}
+            if filtros.get("reset"):
+                applied = {"dates": filtros["date_range"]}
+                widget_updates["widget_fechas_datos"] = filtros["date_range"]
+                for field in ("hotel", "restaurant", "shift", "attention", "cross"):
+                    widget_updates[f"widget_{field}_datos"] = []
+            else:
+                if "date_range" in filtros:
+                    applied["dates"] = filtros["date_range"]
+                    widget_updates["widget_fechas_datos"] = filtros["date_range"]
+                for field in ("hotel", "restaurant", "shift", "attention"):
+                    if field in filtros:
+                        applied[field] = [filtros[field]]
+                        widget_updates[f"widget_{field}_datos"] = [filtros[field]]
+                if "cross_dining" in filtros:
+                    applied["cross"] = [filtros["cross_dining"]]
+                    widget_updates["widget_cross_datos"] = [filtros["cross_dining"]]
+            widget_updates["filtros_aplicados_datos"] = applied
+            st.session_state["_filtros_asistente_pendientes"] = widget_updates
+            st.rerun()
+
+        with st.chat_message("user"):
+            st.markdown(pregunta)
+        with st.chat_message("assistant"):
+            st.markdown(respuesta)
+
+    if st.session_state["conversacion_dashboard"] and st.button("Borrar conversación"):
+        st.session_state["conversacion_dashboard"] = []
+        st.rerun()
+
+
+# =====================================================================
+# TAB 8: EXPORTACIÓN Y REPORTES
+# =====================================================================
+with tabs[2]:
+    st.divider()
     st.subheader("📥 Exportación Multiformato de Reportes Operativos")
     st.caption("Descarga la información procesada y limpia para análisis externo en Excel, CSV o reportes ejecutivos.")
 

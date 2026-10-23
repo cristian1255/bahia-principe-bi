@@ -463,19 +463,26 @@ def cargar_dataframe(df: pd.DataFrame, restaurante: str, engine=None) -> int:
                 hotel.hotel_res = row["hotel_res"]
             hotel_id = hotel.id_hotel
 
-            service_key = service_code
+            service_code = (row["servicio"] or "SIN_DATO").strip()
+            service_key = service_code or "SIN_DATO"
+            restaurant_name = row["restaurante"]
             existing_restaurant = service_restaurants.get(service_key)
             if (
-                existing_restaurant
-                and row["restaurante"]
-                and existing_restaurant.casefold() != row["restaurante"].casefold()
+                restaurant_name
+                and existing_restaurant
+                and existing_restaurant.casefold() != restaurant_name.casefold()
             ):
-                restaurant_hash = hashlib.sha1(row["restaurante"].casefold().encode("utf-8")).hexdigest()[:10]
-                service_key = f"{service_code[:39]}~{restaurant_hash}"
+                restaurant_hash = hashlib.sha1(restaurant_name.casefold().encode("utf-8")).hexdigest()[:10]
+                service_key = f"{service_key[:39]}~{restaurant_hash}"
+            elif not service_code and restaurant_name:
+                normalized_name = restaurant_name.casefold()
+                if existing_restaurant and existing_restaurant.casefold() != normalized_name:
+                    restaurant_hash = hashlib.sha1(normalized_name.encode("utf-8")).hexdigest()[:10]
+                    service_key = f"{service_key[:39]}~{restaurant_hash}"
 
             service_id = services.get(service_key)
             if service_id is None:
-                service = DimServicio(codigo_servicio=service_key, restaurante=row["restaurante"])
+                service = DimServicio(codigo_servicio=service_key, restaurante=restaurant_name)
                 session.add(service)
                 session.flush()
                 services[service_key] = service_id = service.id_servicio
