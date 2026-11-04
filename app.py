@@ -40,6 +40,9 @@ from etl_pipeline import (
     TIPOS_ATENCION_CATALOGO,
 )
 
+px.defaults.template = "plotly_white"
+px.defaults.color_discrete_sequence = ["#0B4F39", "#B49A62", "#667A70", "#9A5C4A", "#627A8A"]
+
 # =====================================================================
 # CONFIGURACIÓN DE SERVIDOR PARA ACCESO LOCAL/ANDROID
 # =====================================================================
@@ -97,224 +100,217 @@ st.set_page_config(
 # Inyección de estilos CSS elegantes con temática Bahía Príncipe
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap');
+
+    :root {
+        --bp-forest: #0B4F39;
+        --bp-forest-deep: #083D2D;
+        --bp-gold: #B49A62;
+        --bp-ink: #1C2923;
+        --bp-muted: #68766F;
+        --bp-line: #DCE4DE;
+        --bp-paper: #F4F7F4;
+        --bp-white: #FFFFFF;
+    }
 
     html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
+        color: var(--bp-ink);
+        letter-spacing: 0;
     }
+    [data-testid="stAppViewContainer"] { background: var(--bp-paper); }
+    [data-testid="stHeader"] { background: rgba(244, 247, 244, 0.96); }
+    .block-container { max-width: 1540px; padding: 1.7rem 2.2rem 3rem; }
 
-    /* Fondo principal limpio y texto oscuro de alto contraste */
-    [data-testid="stAppViewContainer"] {
-        background: #F8FAFC;
-        color: #0F172A;
-    }
-    [data-testid="stHeader"] { 
-        background: rgba(248, 250, 252, 0.95); 
-    }
-
-    /* Barra lateral corporativa Bahía Príncipe con texto blanco nítido */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0B1528 0%, #13223D 100%);
-        color: #FFFFFF;
-    }
+    [data-testid="stSidebar"] { background: var(--bp-forest-deep); }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
-    [data-testid="stSidebar"] label { 
-        color: #F1F5F9 !important; 
-        font-weight: 500;
-    }
-    [data-testid="stSidebar"] h1, 
-    [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] h3 { 
-        color: #FFFFFF !important; 
-    }
-
-    /* Títulos principales con contraste oscuro */
-    h1, h2, h3, h4, h5, h6 { 
-        color: #0F172A !important; 
+    [data-testid="stSidebar"] label { color: #E8F0EB !important; font-weight: 400; }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 { color: #FFFFFF !important; font-weight: 600; }
+    [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.16); }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #B9C9C0; }
+    .sidebar-brand { text-align: center; padding: 8px 0 15px; }
+    .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border: 1px solid rgba(180,154,98,.75);
+        border-radius: 50%;
+        color: #E8D9B6 !important;
+        font-size: .9rem;
         font-weight: 700;
-        letter-spacing: -0.01em; 
+        margin-bottom: 8px;
     }
-    p, span {
-        color: #1E293B;
-    }
+    .brand-name { color: #FFFFFF !important; font-size: 1rem; font-weight: 700; }
+    .brand-subtitle { color: #D7C79F !important; font-size: .73rem; margin-top: 3px; }
+    .brand-description { color: #B9C9C0 !important; font-size: .8rem; margin-top: 6px; }
 
-    .block-container { 
-        max-width: 1500px; 
-        padding-top: 1.5rem; 
-    }
+    h1, h2, h3, h4, h5, h6 { color: var(--bp-ink) !important; font-weight: 600; letter-spacing: 0; }
+    h2 { font-size: 1.45rem; }
+    h3 { font-size: 1.2rem; }
+    p { color: var(--bp-ink); }
+    [data-testid="stCaptionContainer"] { color: var(--bp-muted); }
 
-    /* Tarjetas de Métricas Ejecutivas */
+    .page-masthead {
+        padding: 0 0 1.35rem;
+        margin: 0 0 1.2rem;
+        border-bottom: 1px solid var(--bp-line);
+    }
+    .masthead-kicker {
+        color: var(--bp-forest) !important;
+        font-size: .76rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        margin: 0 0 .35rem;
+    }
+    .page-masthead h1 { font-size: 1.9rem; line-height: 1.15; margin: 0; }
+    .masthead-subtitle { color: var(--bp-muted) !important; font-size: 1rem; margin: .35rem 0 0; }
+    .masthead-meta { display: flex; gap: 1.8rem; flex-wrap: wrap; margin-top: 1rem; }
+    .meta-item { color: var(--bp-muted) !important; font-size: .88rem; }
+    .meta-item strong { color: var(--bp-ink) !important; font-weight: 600; }
+
     .metric-card {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 10px;
-        padding: 16px 18px;
-        color: #0F172A;
-        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
-        min-height: 112px;
+        min-height: 122px;
+        padding: 15px 17px;
+        background: var(--bp-white);
+        border: 1px solid var(--bp-line);
+        border-top: 2px solid var(--bp-forest);
+        border-radius: 5px;
+        box-shadow: 0 2px 8px rgba(21, 48, 36, .035);
     }
-    .metric-title {
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #475569;
-        margin-bottom: 6px;
-        font-weight: 700;
-    }
-    .metric-value {
-        font-size: 1.85rem;
-        font-weight: 800;
-        color: #0F172A;
-        line-height: 1.1;
-    }
-    .metric-sub {
-        font-size: 0.8rem;
-        margin-top: 6px;
-        color: #0284C7;
+    .metric-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+    .metric-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 27px;
+        height: 27px;
+        flex: 0 0 27px;
+        border-radius: 50%;
+        background: #EAF1EC;
+        color: var(--bp-forest);
+        font-size: .95rem;
         font-weight: 600;
     }
-
-    /* Banner corporativo */
-    .brand-header {
-        background: linear-gradient(90deg, #0B1528 0%, #172B4D 50%, #0B1528 100%);
-        border: 1px solid rgba(197, 160, 89, 0.4);
-        border-radius: 14px;
-        padding: 22px 28px;
-        margin-bottom: 24px;
-        box-shadow: 0 8px 24px rgba(11, 21, 40, 0.25);
-    }
-    .brand-title {
-        color: #FFFFFF !important;
-        font-size: 1.7rem;
-        font-weight: 800;
-        margin: 0;
-    }
-    .brand-subtitle {
-        color: #C5A059 !important;
-        font-size: 0.92rem;
-        font-weight: 600;
-        margin-top: 4px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-    }
-
-    .executive-hero {
-        background: #0F766E;
-        color: #FFFFFF;
-        border-left: 6px solid #C2410C;
-        border-radius: 8px;
-        padding: 24px 28px;
-        margin: 0 0 22px;
-        box-shadow: none;
-    }
-    .executive-hero h1, .executive-hero p, .executive-hero span { 
-        color: #FFFFFF !important; 
-    }
-    .executive-hero h1 { margin: 0; font-size: 1.8rem; }
-    .executive-hero p { margin: 6px 0 0; opacity: 0.9; }
+    .metric-title { color: var(--bp-muted); font-size: .85rem; font-weight: 600; line-height: 1.15; }
+    .metric-value { color: var(--bp-ink); font-size: 1.8rem; font-weight: 700; line-height: 1.05; }
+    .metric-sub { color: var(--bp-muted); font-size: .82rem; margin-top: 6px; }
 
     .section-note {
-        background: #EFF6FF;
-        border-left: 4px solid #0284C7;
-        border-radius: 6px;
-        color: #1E3A8A;
-        padding: 11px 16px;
+        background: #EDF3EF;
+        border-left: 3px solid var(--bp-forest);
+        border-radius: 2px;
+        color: #34483D;
+        padding: 10px 14px;
         margin: 8px 0 16px;
-        font-size: 0.88rem;
+        font-size: .9rem;
     }
-    .section-note strong {
-        color: #0F172A;
-    }
-
-    .decision-card {
+    .section-note strong { color: var(--bp-forest-deep); }
+    .chart-analysis {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
         background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 9px;
-        padding: 16px;
-        min-height: 120px;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+        border: 1px solid var(--bp-line);
+        border-top: 2px solid var(--bp-gold);
+        border-radius: 4px;
+        padding: 14px 16px;
+        margin: 4px 0 22px;
     }
-    .decision-card strong { 
-        color: #0F172A; 
-        font-size: 0.95rem;
+    .chart-analysis-item { min-width: 0; }
+    .chart-analysis-item + .chart-analysis-item {
+        border-left: 1px solid var(--bp-line);
+        padding-left: 16px;
     }
-    .decision-card p { 
-        color: #475569; 
-        font-size: 0.85rem; 
-        margin: 6px 0 0; 
+    .chart-analysis-label {
+        color: var(--bp-forest) !important;
+        font-size: .79rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        line-height: 1.3;
+        margin-bottom: 8px;
     }
+    .chart-analysis-text {
+        color: #43534A !important;
+        font-size: .9rem;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+    }
+    .project-section { padding: 18px 0; border-top: 1px solid var(--bp-line); }
+    .project-section h3 { margin-top: 0; }
+    .impact-item { padding: 12px 0; border-bottom: 1px solid var(--bp-line); }
+    .impact-item strong { color: var(--bp-forest); }
+    .status-line { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--bp-line); }
+    .status-value { color: var(--bp-forest); font-weight: 600; text-align: right; }
+    .decision-card {
+        background: transparent;
+        border: 0;
+        border-top: 1px solid var(--bp-line);
+        border-radius: 0;
+        padding: 12px 4px;
+        min-height: 86px;
+        box-shadow: none;
+    }
+    .decision-card strong { color: var(--bp-forest); font-size: .95rem; }
+    .decision-card p { color: var(--bp-muted); font-size: .87rem; margin: 5px 0 0; }
 
-    /* Badges de semáforo de ocupación */
-    .badge-ok {
-        background-color: #DCFCE7;
-        color: #166534;
-        border: 1px solid #86EFAC;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
+    .badge-ok, .badge-warning, .badge-danger {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 3px;
+        font-size: .72rem;
         font-weight: 700;
     }
-    .badge-warning {
-        background-color: #FEF3C7;
-        color: #92400E;
-        border: 1px solid #FCD34D;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-    .badge-danger {
-        background-color: #FEE2E2;
-        color: #991B1B;
-        border: 1px solid #FCA5A5;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
+    .badge-ok { background: #E7F1EA; color: #245D3D; border: 1px solid #C9DDCE; }
+    .badge-warning { background: #F5F0E3; color: #796333; border: 1px solid #E6D9B7; }
+    .badge-danger { background: #F7EAE7; color: #8A3D31; border: 1px solid #E8C9C2; }
 
-    /* Estilo de pestañas visibles */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 2px solid #E2E8F0;
-        padding-bottom: 4px;
+        gap: 1.4rem;
+        border-bottom: 1px solid var(--bp-line);
+        background: transparent;
     }
     .stTabs [data-baseweb="tab"] {
-        background: #FFFFFF;
-        border: 1px solid #CBD5E1;
-        border-radius: 8px 8px 0 0;
-        padding: 10px 18px;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        padding: 10px 2px;
+        color: var(--bp-muted);
         font-weight: 600;
-        color: #334155;
     }
     .stTabs [aria-selected="true"] {
-        background: #0B1528 !important;
-        color: #FFFFFF !important;
-        border-color: #0B1528 !important;
+        color: var(--bp-forest) !important;
+        border-bottom: 2px solid var(--bp-forest) !important;
+        background: transparent !important;
     }
 
-    /* Métricas nativas de Streamlit */
-    [data-testid="stMetricValue"] {
-        color: #0F172A !important;
-        font-weight: 800 !important;
-    }
-    [data-testid="stMetricLabel"] {
-        color: #475569 !important;
-        font-weight: 700 !important;
-    }
+    [data-testid="stMetricValue"] { color: var(--bp-ink) !important; font-weight: 700 !important; }
+    [data-testid="stMetricLabel"] { color: var(--bp-muted) !important; font-weight: 600 !important; }
+    [data-testid="stDataFrame"], [data-testid="stTable"] { border: 1px solid var(--bp-line); border-radius: 4px; }
+    [data-testid="stExpander"] { border: 1px solid var(--bp-line); border-radius: 4px; background: var(--bp-white); }
+    [data-testid="stBaseButton-primary"] { background: var(--bp-forest); border-color: var(--bp-forest); }
+    [data-testid="stBaseButton-primary"]:hover { background: var(--bp-forest-deep); border-color: var(--bp-forest-deep); }
+    [data-testid="stBaseButton-secondary"] { border-color: #BFCBC2; color: var(--bp-forest); }
+    [data-testid="stBaseButton-secondary"]:hover { border-color: var(--bp-forest); color: var(--bp-forest-deep); }
+    [data-testid="stWidgetLabel"] p { color: var(--bp-ink); font-weight: 500; }
+    .vip-alert-card { background: #F5F0E3; border-left: 3px solid var(--bp-gold); padding: 14px 18px; border-radius: 2px; margin-bottom: 12px; color: #554A33; }
+    .vip-alert-card strong { color: #69582D; }
 
-    /* Alertas y avisos */
-    .vip-alert-card {
-        background: #FFFBEB;
-        border-left: 4px solid #C5A059;
-        padding: 14px 18px;
-        border-radius: 0 8px 8px 0;
-        margin-bottom: 12px;
-        color: #78350F;
-    }
-    .vip-alert-card strong {
-        color: #92400E;
+    @media (max-width: 760px) {
+        .block-container { padding: 1rem 1rem 2rem; }
+        .page-masthead h1 { font-size: 1.55rem; }
+        .masthead-meta { gap: .55rem 1rem; }
+        .metric-card { min-height: 112px; padding: 12px; }
+        .metric-value { font-size: 1.55rem; }
+        .stTabs [data-baseweb="tab-list"] { gap: .8rem; }
+        .chart-analysis { grid-template-columns: 1fr; gap: 10px; }
+        .chart-analysis-item + .chart-analysis-item { border-left: 0; border-top: 1px solid var(--bp-line); padding: 10px 0 0; }
+        .status-line { flex-direction: column; gap: 2px; }
+        .status-value { text-align: left; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -548,23 +544,43 @@ CONFIG_GRAFICAS = {
 }
 
 
+def mostrar_analisis_grafica(muestra: str, objetivo: str, accion: str) -> None:
+    """Renderiza una lectura gerencial breve vinculada a una gráfica."""
+    st.markdown(f"""
+        <div class="chart-analysis">
+            <div class="chart-analysis-item">
+                <div class="chart-analysis-label">¿Qué muestra esta gráfica?</div>
+                <div class="chart-analysis-text">{muestra}</div>
+            </div>
+            <div class="chart-analysis-item">
+                <div class="chart-analysis-label">¿Cuál es el objetivo analítico?</div>
+                <div class="chart-analysis-text">{objetivo}</div>
+            </div>
+            <div class="chart-analysis-item">
+                <div class="chart-analysis-label">Acción ejecutiva sugerida</div>
+                <div class="chart-analysis-text">{accion}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+
 # =====================================================================
 # BARRA LATERAL (SIDEBAR): CARGA, FILTROS Y ESTADO
 # =====================================================================
 
 with st.sidebar:
     st.markdown("""
-        <div style="text-align: center; padding: 10px 0 16px 0;">
-            <div style="font-size: 2.2rem; margin-bottom: 4px;">🏖️ 🍽️</div>
-            <div style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.01em;">BAHIA PRINCIPE</div>
-            <div style="font-size: 0.75rem; font-weight: 600; color: #C5A059; letter-spacing: 0.12em; text-transform: uppercase;">Hotels & Resorts</div>
-            <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 4px;">Business Intelligence - A&B</div>
+        <div class="sidebar-brand">
+            <div class="brand-mark">BP</div>
+            <div class="brand-name">BAHÍA PRÍNCIPE</div>
+            <div class="brand-subtitle">Hotels & Resorts</div>
+            <div class="brand-description">Business Intelligence · A&B</div>
         </div>
     """, unsafe_allow_html=True)
 
     # 1. GESTIÓN DE FUENTE DE DATOS
     st.markdown("---")
-    st.subheader("📂 Carga y actualización de datos")
+    st.subheader("Carga y actualización de datos")
 
     # Formatos aceptados (sin límite de archivos ni tamaño por archivo)
     FORMATOS_ACEPTADOS = [
@@ -577,7 +593,7 @@ with st.sidebar:
     ]
 
     archivos_subidos = st.file_uploader(
-        "📁 Cargar archivos de datos (uno o varios, sin límite de cantidad):",
+        "Cargar archivos de datos",
         type=FORMATOS_ACEPTADOS,
         accept_multiple_files=True,
         help=(
@@ -606,7 +622,7 @@ with st.sidebar:
             ),
         )
 
-        if st.button("⚡ Procesar y Cargar a BD", use_container_width=True, type="primary"):
+        if st.button("Procesar y cargar datos", use_container_width=True, type="primary"):
             with st.spinner(f"Ejecutando carga masiva de {n} archivo{'s' if n > 1 else ''}..."):
                 try:
                     from etl_pipeline import ejecutar_etl_carga_masiva
@@ -675,17 +691,17 @@ hoteles_incluidos = df_filtrado["hotel_restaurante"].nunique() if not df_filtrad
 restaurantes_incluidos = df_filtrado["nombre_restaurante"].nunique() if not df_filtrado.empty else 0
 
 st.markdown(f"""
-    <div class="executive-hero">
-        <span style="font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em;">BAHÍA PRÍNCIPE • RESTAURANTES</span>
-        <h1>Demanda y experiencia de nuestros huéspedes</h1>
-        <p>Un resumen sencillo de las reservas, los días con más actividad y lo que se espera para el futuro.</p>
-        <div style="display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; font-size: 0.82rem;">
-            <span>📅 {f_inicio} → {f_fin}</span>
-            <span>🏨 {hoteles_incluidos} hoteles disponibles</span>
-            <span>🍽️ {restaurantes_incluidos} restaurantes disponibles</span>
-            <span>📊 {len(df_filtrado):,} reservas en esta vista</span>
+    <header class="page-masthead">
+        <p class="masthead-kicker">Bahía Príncipe · Inteligencia de A&B</p>
+        <h1>Restaurantes de especialidad</h1>
+        <p class="masthead-subtitle">Demanda, capacidad y experiencia de servicio</p>
+        <div class="masthead-meta">
+            <span class="meta-item"><strong>Periodo</strong> &nbsp;{f_inicio} – {f_fin}</span>
+            <span class="meta-item"><strong>{hoteles_incluidos}</strong> hoteles</span>
+            <span class="meta-item"><strong>{restaurantes_incluidos}</strong> restaurantes</span>
+            <span class="meta-item"><strong>{len(df_filtrado):,}</strong> reservas</span>
         </div>
-    </div>
+    </header>
 """, unsafe_allow_html=True)
 
 
@@ -696,7 +712,8 @@ st.markdown(f"""
 tabs = st.tabs([
     "Resumen",
     "Operación y pronóstico",
-    "Preguntas y datos"
+    "Preguntas y datos",
+    "Resultados e impacto"
 ])
 
 
@@ -737,73 +754,36 @@ with tabs[0]:
         if ocupacion_global_pct is not None:
             ocupacion_global_pct = min(100.0, ocupacion_global_pct)
 
-        # Fila 1: Tarjetas de Métricas Ejecutivas
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        with c1:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Total Reservas</div>
-                    <div class="metric-value">{total_reservas:,}</div>
-                    <div class="metric-sub">{dias_totales} días analizados</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Total Comensales (Pax)</div>
-                    <div class="metric-value">{total_pax:,}</div>
-                    <div class="metric-sub">{round(total_pax/dias_totales, 1):,} pax/día prom.</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Adultos vs Niños/Bebés</div>
-                    <div class="metric-value">{total_adultos:,}</div>
-                    <div class="metric-sub">{total_ninos + total_bebes:,} menores ({round((total_ninos+total_bebes)/total_pax*100, 1) if total_pax else 0}%)</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c4:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Promedio Pax / Mesa</div>
-                    <div class="metric-value">{prom_pax_reserva}</div>
-                    <div class="metric-sub">comensales por reserva</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c5:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Tasa Cross-Dining</div>
-                    <div class="metric-value">{pct_cross}%</div>
-                    <div class="metric-sub">{total_cross:,} huéspedes de otro hotel</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c6:
-            badge_color = "warning" if ocupacion_global_pct is None else ("ok" if ocupacion_global_pct < 75 else ("warning" if ocupacion_global_pct <= 90 else "danger"))
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-title">Ocupación estimada</div>
-                    <div class="metric-value">{f"{ocupacion_global_pct}%" if ocupacion_global_pct is not None else "Sin dato"}</div>
-                    <div class="metric-sub"><span class="badge-{badge_color}">{"Aforo pendiente" if ocupacion_global_pct is None else "Estimación orientativa"}</span></div>
-                </div>
-            """, unsafe_allow_html=True)
+        metric_cards = [
+            ("▤", "Reservas", f"{total_reservas:,}", f"{dias_totales} días analizados"),
+            ("◉", "Comensales", f"{total_pax:,}", f"{round(total_pax / dias_totales, 1):,} por día en promedio"),
+            ("♙", "Adultos", f"{total_adultos:,}", f"{total_ninos + total_bebes:,} niños y bebés · {round((total_ninos + total_bebes) / total_pax * 100, 1) if total_pax else 0}%"),
+            ("⌂", "Tamaño medio de mesa", f"{prom_pax_reserva}", "comensales por reserva"),
+            ("↔", "Cross-dining", f"{pct_cross}%", f"{total_cross:,} reservas entre hoteles"),
+        ]
+        badge_color = "warning" if ocupacion_global_pct is None else ("ok" if ocupacion_global_pct < 75 else ("warning" if ocupacion_global_pct <= 90 else "danger"))
+        occupancy_subtitle = "Capacidad pendiente" if ocupacion_global_pct is None else "Estimación orientativa"
+        metric_cards.append(("◷", "Ocupación estimada", f"{ocupacion_global_pct}%" if ocupacion_global_pct is not None else "Sin dato", f"<span class='badge-{badge_color}'>{occupancy_subtitle}</span>"))
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        for row_start in range(0, len(metric_cards), 3):
+            metric_columns = st.columns(3)
+            for column, (icon, label, value, subtitle) in zip(metric_columns, metric_cards[row_start:row_start + 3]):
+                with column:
+                    st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-card-head">
+                                <span class="metric-icon" aria-hidden="true">{icon}</span>
+                                <span class="metric-title">{label}</span>
+                            </div>
+                            <div class="metric-value">{value}</div>
+                            <div class="metric-sub">{subtitle}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
 
-        st.markdown("""
-            <div class="section-note"><strong>Qué buscamos:</strong> detectar dónde se concentra la demanda, anticipar saturaciones y convertir los datos en acciones concretas para Dirección de A&B.</div>
-        """, unsafe_allow_html=True)
-        d1, d2, d3 = st.columns(3)
-        with d1:
-            st.markdown("<div class='decision-card'><strong>🔎 Diagnóstico</strong><p>Identifica hoteles, restaurantes y turnos con mayor presión operativa.</p></div>", unsafe_allow_html=True)
-        with d2:
-            st.markdown("<div class='decision-card'><strong>🧠 Predicción</strong><p>Entrena una red neuronal con la historia diaria para anticipar la demanda.</p></div>", unsafe_allow_html=True)
-        with d3:
-            st.markdown("<div class='decision-card'><strong>✅ Acción</strong><p>Recomienda ajustes de mesas, personal, turnos y capacidad antes del pico.</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 1.1rem'></div>", unsafe_allow_html=True)
 
         # Fila 2: Semáforo Visual de Ocupación por Restaurante
-        st.subheader("🚦 Semáforo de Ocupación por Restaurante de Especialidad")
+        st.subheader("Ocupación por restaurante")
         st.caption("Mide el porcentaje de comensales promedio por noche frente a la capacidad instalada del restaurante.")
 
         # Agrupar por restaurante y calcular ocupación media por noche
@@ -833,14 +813,14 @@ with tabs[0]:
                 badge_html = '<span class="badge-warning">Capacidad no registrada</span>'
                 b_color = "#94A3B8"
             elif pct < 75:
-                badge_html = f'<span class="badge-ok">🟢 {pct}% NORMAL</span>'
-                b_color = "#10B981"
+                badge_html = f'<span class="badge-ok">{pct}% NORMAL</span>'
+                b_color = "#5D806B"
             elif pct <= 90:
-                badge_html = f'<span class="badge-warning">🟡 {pct}% ALTA</span>'
-                b_color = "#F59E0B"
+                badge_html = f'<span class="badge-warning">{pct}% ALTA</span>'
+                b_color = "#B49A62"
             else:
-                badge_html = f'<span class="badge-danger">🔴 {pct}% SATURADO</span>'
-                b_color = "#EF4444"
+                badge_html = f'<span class="badge-danger">{pct}% SATURADO</span>'
+                b_color = "#A9695E"
 
             with rest_cols[col_idx]:
                 st.markdown(f"""
@@ -848,7 +828,7 @@ with tabs[0]:
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">{row['nombre_restaurante']}</span>
                         </div>
-                        <div style="font-size: 0.78rem; color: #0284C7; font-weight: 600; margin-top: 2px;">{row['especialidad']} • {row['hotel_restaurante']}</div>
+                        <div style="font-size: 0.78rem; color: #527366; font-weight: 600; margin-top: 2px;">{row['especialidad']} • {row['hotel_restaurante']}</div>
                         <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
                             <span style="font-size: 0.8rem; color: #64748B;">Capacidad: {'No registrada' if not row['capacidad_maxima_pax'] else f"{row['capacidad_maxima_pax']} pax"}</span>
                             {badge_html}
@@ -864,7 +844,7 @@ with tabs[0]:
         # Fila 3: Gráficos de Tendencias Temporales y Distribución
         g1, g2 = st.columns([1.3, 1])
         with g1:
-            st.subheader("📈 Actividad por día")
+            st.subheader("Actividad por día")
             st.caption("Cada barra representa cuántos comensales hubo ese día; la línea cuenta las reservas.")
             df_tiempo_trend = df_filtrado.groupby("id_fecha").agg(
                 total_pax=("total_pax", "sum"),
@@ -878,7 +858,7 @@ with tabs[0]:
                 x=df_tiempo_trend["id_fecha"],
                 y=df_tiempo_trend["total_pax"],
                 name="Comensales (Pax)",
-                marker_color="rgba(197, 160, 89, 0.65)",
+                marker_color="rgba(180, 154, 98, 0.65)",
                 yaxis="y"
             ))
             fig_trend.add_trace(go.Scatter(
@@ -886,7 +866,7 @@ with tabs[0]:
                 y=df_tiempo_trend["total_reservas"],
                 name="Nº Reservas",
                 mode="lines+markers",
-                line=dict(color="#38BDF8", width=3),
+                line=dict(color="#0B4F39", width=3),
                 yaxis="y2"
             ))
             fig_trend.update_layout(
@@ -901,7 +881,11 @@ with tabs[0]:
                 height=380
             )
             st.plotly_chart(fig_trend, use_container_width=True, config=CONFIG_GRAFICAS)
-            st.markdown("<div class='section-note'><strong>Cómo leerla:</strong> las barras muestran comensales por día y la línea muestra reservas. Picos simultáneos indican necesidad de reforzar capacidad y personal.</div>", unsafe_allow_html=True)
+            mostrar_analisis_grafica(
+                "Cruza la fecha de la dimensión Tiempo con comensales y reservas de la tabla de hechos.",
+                "Detectar tendencias, estacionalidad y jornadas de mayor presión de servicio.",
+                "Ajustar turnos, compras y dotación en las fechas que concentran ambos indicadores.",
+            )
 
         with g2:
             st.subheader(f"{metric_label} por hotel")
@@ -917,7 +901,7 @@ with tabs[0]:
                 values=pie_metric_column,
                 hole=0.45,
                 labels={pie_metric_column: metric_label, "hotel_restaurante": "Hotel"},
-                color_discrete_sequence=["#C5A059", "#38BDF8", "#10B981", "#818CF8", "#F472B6"]
+                color_discrete_sequence=["#0B4F39", "#B49A62", "#667A70", "#9A5C4A", "#627A8A"]
             )
             fig_pie.update_traces(textinfo="label+percent", hovertemplate="%{label}<br>%{value:,.0f} " + metric_label.lower() + "<extra></extra>")
             fig_pie.update_layout(
@@ -928,7 +912,11 @@ with tabs[0]:
                 legend=dict(orientation="v", yanchor="middle", y=0.5, font=dict(color="#0F172A"))
             )
             st.plotly_chart(fig_pie, use_container_width=True, config=CONFIG_GRAFICAS)
-            st.markdown("<div class='section-note'><strong>Resultado:</strong> permite localizar qué hoteles concentran el consumo y dónde conviene redistribuir promociones, mesas o recursos.</div>", unsafe_allow_html=True)
+            mostrar_analisis_grafica(
+                f"Distribuye {metric_label.lower()} por hotel del restaurante, agregados desde las reservas.",
+                "Comparar la participación de cada hotel en la demanda del periodo filtrado.",
+                "Revisar capacidad y promoción en los hoteles de mayor peso, sin descuidar los de menor participación.",
+            )
 
         st.markdown("### Más formas de leer la actividad")
         tipo_comparacion = st.radio(
@@ -969,6 +957,11 @@ with tabs[0]:
                 fig_month.update_traces(mode="lines+markers")
             fig_month.update_layout(height=340, margin=dict(l=20, r=15, t=15, b=20), showlegend=False)
             st.plotly_chart(fig_month, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                f"Agrupa por mes de la dimensión Tiempo y suma {metric_label.lower()} de las reservas.",
+                "Reconocer meses pico y valles para distinguir patrones de temporada.",
+                "Planificar compras, calendario de personal y capacidad con antelación a los meses de mayor demanda.",
+            )
         with chart_restaurant:
             st.subheader(f"Los 10 restaurantes con más {metric_label.lower()}")
             st.caption("Las barras más largas indican mayor actividad en el periodo elegido.")
@@ -979,7 +972,7 @@ with tabs[0]:
                     y="nombre_restaurante",
                     orientation="h",
                     labels={"nombre_restaurante": "Restaurante", "valor": metric_label},
-                    color_discrete_sequence=["#B45309"],
+                    color_discrete_sequence=["#B49A62"],
                 )
             else:
                 fig_restaurants = px.scatter(
@@ -987,10 +980,15 @@ with tabs[0]:
                     x="valor",
                     y="nombre_restaurante",
                     labels={"nombre_restaurante": "Restaurante", "valor": metric_label},
-                    color_discrete_sequence=["#B45309"],
+                    color_discrete_sequence=["#B49A62"],
                 )
             fig_restaurants.update_layout(height=340, margin=dict(l=20, r=15, t=15, b=20), showlegend=False)
             st.plotly_chart(fig_restaurants, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                f"Ordena los diez restaurantes con mayor volumen de {metric_label.lower()} en el periodo.",
+                "Identificar restaurantes líderes y comparar su peso operativo.",
+                "Contrastar la carga de los restaurantes líderes con su capacidad y reforzar los turnos que lo requieran.",
+            )
 
 
 # =====================================================================
@@ -1013,9 +1011,8 @@ with tabs[1]:
         )
         operacion_columna = "total_pax" if metrica_operacion == "Comensales" else "id_reserva"
         operacion_agregacion = "sum" if operacion_columna == "total_pax" else "count"
-        st.subheader("⏰ Mapa de Calor de Ocupación por Turno y Restaurante")
+        st.subheader("Ocupación por turno y restaurante")
         st.caption("Permite a la Dirección de A&B balancear las cargas horarias y mitigar sobreventas en franjas pico.")
-        st.markdown("<div class='section-note'><strong>Qué buscamos:</strong> encontrar la combinación restaurante-turno que concentra la demanda. Los colores intensos requieren redistribución de reservas, mesas o personal.</div>", unsafe_allow_html=True)
 
         # Pivot table: Restaurante vs Turno
         pivot_ocup = df_filtrado.pivot_table(
@@ -1044,12 +1041,206 @@ with tabs[1]:
         fig_heat.update_xaxes(tickfont=dict(color="#334155", size=11), title_font=dict(color="#0F172A"))
         fig_heat.update_yaxes(tickfont=dict(color="#334155", size=11), title_font=dict(color="#0F172A"))
         st.plotly_chart(fig_heat, use_container_width=True, config=CONFIG_GRAFICAS)
+        mostrar_analisis_grafica(
+            f"Cruza restaurante y franja horaria con el total de {metrica_operacion.lower()} de la tabla de hechos.",
+            "Localizar combinaciones restaurante-turno que concentran o reciben poca demanda.",
+            "Redistribuir reservas cuando sea viable y ajustar personal en las celdas de mayor volumen.",
+        )
+
+        st.markdown("### Demanda por restaurante y horario")
+        st.caption("Compara la cantidad de comensales registrada. Estos volúmenes muestran carga relativa, no porcentaje de aforo.")
+        fecha_registro = pd.to_datetime(df_filtrado["id_fecha"]).dt.date
+        fechas_con_reservas = sorted(fecha_registro.unique())[-7:]
+        datos_recientes = df_filtrado.loc[fecha_registro.isin(fechas_con_reservas)].copy()
+        periodo_dias = max(len(fechas_con_reservas), 1)
+
+        demanda_restaurante = (
+            datos_recientes.groupby("nombre_restaurante", as_index=False)
+            .agg(pax_periodo=("total_pax", "sum"), reservas=("id_reserva", "count"))
+        )
+        demanda_restaurante["pax_dia_promedio"] = demanda_restaurante["pax_periodo"] / periodo_dias
+        demanda_restaurante = demanda_restaurante.sort_values("pax_dia_promedio", ascending=False)
+
+        datos_recientes["hora_visible"] = datos_recientes["horario_texto"].astype(str).map(
+            lambda value: value.split(" - ")[0]
+            if len(value.split(" - ")) == 2 and value.split(" - ")[0] == value.split(" - ")[1]
+            else value
+        )
+        demanda_horario = (
+            datos_recientes.groupby("hora_visible", as_index=False)
+            .agg(pax_periodo=("total_pax", "sum"), reservas=("id_reserva", "count"))
+        )
+        demanda_horario["pax_dia_promedio"] = demanda_horario["pax_periodo"] / periodo_dias
+        demanda_horario = demanda_horario.sort_values("pax_dia_promedio", ascending=False).head(10)
+
+        demanda_col1, demanda_col2 = st.columns(2)
+        with demanda_col1:
+            st.markdown("#### Comensales promedio por restaurante")
+            fig_carga_restaurantes = px.bar(
+                demanda_restaurante.head(10).sort_values("pax_dia_promedio"),
+                x="pax_dia_promedio",
+                y="nombre_restaurante",
+                orientation="h",
+                labels={"pax_dia_promedio": "Comensales por día", "nombre_restaurante": "Restaurante"},
+                color_discrete_sequence=["#0B4F39"],
+            )
+            fig_carga_restaurantes.update_layout(height=390, margin=dict(l=10, r=20, t=10, b=20), showlegend=False)
+            st.plotly_chart(fig_carga_restaurantes, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                f"Compara los comensales registrados por restaurante durante {periodo_dias} días.",
+                "Detectar qué restaurantes concentran la mayor carga reciente.",
+                "Revisar disponibilidad y coordinar apoyo operativo en los restaurantes con más demanda.",
+            )
+        with demanda_col2:
+            st.markdown("#### Comensales promedio por horario")
+            fig_carga_horarios = px.bar(
+                demanda_horario.sort_values("pax_dia_promedio"),
+                x="pax_dia_promedio",
+                y="hora_visible",
+                orientation="h",
+                labels={"pax_dia_promedio": "Comensales por día", "hora_visible": "Hora registrada"},
+                color_discrete_sequence=["#B49A62"],
+            )
+            fig_carga_horarios.update_layout(height=390, margin=dict(l=10, r=20, t=10, b=20), showlegend=False)
+            st.plotly_chart(fig_carga_horarios, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                "Agrupa comensales por hora registrada para mostrar cuándo se concentra el servicio.",
+                "Identificar las horas con mayor carga y los periodos relativamente más tranquilos.",
+                "Escalonar preparación y turnos de personal alrededor de las horas de mayor demanda.",
+            )
+
+        restaurante_mayor = demanda_restaurante.iloc[0] if not demanda_restaurante.empty else None
+        if restaurante_mayor is not None:
+            st.info(
+                f"Mayor carga registrada: **{restaurante_mayor['nombre_restaurante']}**, "
+                f"con {restaurante_mayor['pax_dia_promedio']:.1f} comensales por día en las fechas seleccionadas. "
+                "Revisa disponibilidad antes de reasignar reservas o personal."
+            )
+
+        st.markdown("### Simulación: ¿qué pasa si cambia la demanda?")
+        st.caption(
+            f"Base: últimos {periodo_dias} días con reservas cargadas ({fechas_con_reservas[0]} a {fechas_con_reservas[-1]}). "
+            "La comparación estima carga semanal por restaurante, aunque algunas fechas sean futuras."
+        )
+        escenario_col1, escenario_col2, escenario_col3 = st.columns(3)
+        with escenario_col1:
+            cambio_demanda_pct = st.slider(
+                "Cambio de demanda (%)",
+                min_value=-30,
+                max_value=100,
+                value=15,
+                step=5,
+                key="variacion_what_if",
+            )
+        with escenario_col2:
+            ratio_mesero_what_if = st.number_input(
+                "Comensales por mesero",
+                min_value=1,
+                max_value=40,
+                value=14,
+                step=1,
+                key="ratio_mesero_what_if",
+            )
+        with escenario_col3:
+            ratio_cocina_what_if = st.number_input(
+                "Comensales por personal de cocina",
+                min_value=1,
+                max_value=60,
+                value=25,
+                step=1,
+                key="ratio_cocina_what_if",
+            )
+
+        escenario_restaurantes = demanda_restaurante.copy()
+        escenario_restaurantes["Pax semana actual"] = escenario_restaurantes["pax_periodo"]
+        escenario_restaurantes["Pax semana simulada"] = np.ceil(
+            escenario_restaurantes["Pax semana actual"] * (1 + cambio_demanda_pct / 100)
+        ).astype(int)
+        escenario_restaurantes["Meseros estimados / servicio"] = np.ceil(
+            escenario_restaurantes["Pax semana simulada"] / periodo_dias / ratio_mesero_what_if
+        ).astype(int)
+        escenario_restaurantes["Cocina estimada / servicio"] = np.ceil(
+            escenario_restaurantes["Pax semana simulada"] / periodo_dias / ratio_cocina_what_if
+        ).astype(int)
+        escenario_restaurantes["Raciones de referencia"] = escenario_restaurantes["Pax semana simulada"]
+
+        fig_escenario = go.Figure()
+        fig_escenario.add_trace(go.Bar(
+            x=escenario_restaurantes["nombre_restaurante"],
+            y=escenario_restaurantes["Pax semana actual"],
+            name="Semana registrada",
+            marker_color="#AAB7AF",
+        ))
+        fig_escenario.add_trace(go.Bar(
+            x=escenario_restaurantes["nombre_restaurante"],
+            y=escenario_restaurantes["Pax semana simulada"],
+            name=f"Escenario {cambio_demanda_pct:+}%",
+            marker_color="#0B4F39",
+        ))
+        fig_escenario.update_layout(
+            barmode="group",
+            height=390,
+            margin=dict(l=20, r=20, t=20, b=90),
+            yaxis_title="Comensales por semana",
+            xaxis_title="Restaurante",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_escenario, use_container_width=True, config=CONFIG_GRAFICAS)
+        mostrar_analisis_grafica(
+            "Compara los comensales registrados con la proyección ajustada por el porcentaje seleccionado.",
+            "Estimar cómo cambiaría la carga semanal de cada restaurante ante una variación de demanda.",
+            "Preparar compras y capacidad según el escenario; sustituirlo por reservas confirmadas cuando estén disponibles.",
+        )
+
+        st.markdown("#### Personal estimado por restaurante y servicio")
+        fig_personal = go.Figure()
+        fig_personal.add_trace(go.Bar(
+            x=escenario_restaurantes["nombre_restaurante"],
+            y=escenario_restaurantes["Meseros estimados / servicio"],
+            name="Meseros",
+            marker_color="#0B4F39",
+        ))
+        fig_personal.add_trace(go.Bar(
+            x=escenario_restaurantes["nombre_restaurante"],
+            y=escenario_restaurantes["Cocina estimada / servicio"],
+            name="Cocina",
+            marker_color="#B49A62",
+        ))
+        fig_personal.update_layout(
+            barmode="group",
+            height=350,
+            margin=dict(l=20, r=20, t=15, b=90),
+            yaxis_title="Personas estimadas por servicio",
+            xaxis_title="Restaurante",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_personal, use_container_width=True, config=CONFIG_GRAFICAS)
+        mostrar_analisis_grafica(
+            "Traduce la demanda simulada a personas estimadas de sala y cocina por restaurante.",
+            "Comparar cómo se distribuye la dotación teórica bajo el escenario elegido.",
+            "Usar las ratios configuradas como punto de partida y validar la asignación con la operación real.",
+        )
+
+        total_actual = int(escenario_restaurantes["Pax semana actual"].sum())
+        total_simulado = int(escenario_restaurantes["Pax semana simulada"].sum())
+        total_meseros = int(escenario_restaurantes["Meseros estimados / servicio"].sum())
+        total_cocina = int(escenario_restaurantes["Cocina estimada / servicio"].sum())
+        resumen_escenario = st.columns(5)
+        resumen_escenario[0].metric("Comensales observados", f"{total_actual:,}")
+        resumen_escenario[1].metric("Comensales simulados", f"{total_simulado:,}", f"{cambio_demanda_pct:+}%")
+        resumen_escenario[2].metric("Meseros estimados / servicio", f"{total_meseros:,}")
+        resumen_escenario[3].metric("Personal cocina / servicio", f"{total_cocina:,}")
+        resumen_escenario[4].metric("Raciones de referencia", f"{total_simulado:,}")
+        st.caption(
+            "La dotación usa las ratios que indicaste y representa personal por servicio, no puestos actualmente asignados. "
+            "Las raciones son una equivalencia de un comensal por ración; el consumo real requiere recetas e inventario."
+        )
 
         st.markdown("---")
         c_cap1, c_cap2 = st.columns(2)
 
         with c_cap1:
-            st.subheader("🔥 Identificación de Horas Pico vs Horas Valle")
+            st.subheader("Franjas de máxima y menor actividad")
             df_turno_agg = df_filtrado.groupby(["turno", "franja_horaria"]).agg(
                 pax_total=(operacion_columna, operacion_agregacion),
                 reservas=("id_reserva", "count"),
@@ -1061,7 +1252,7 @@ with tabs[1]:
                 x="franja_horaria",
                 y="pax_total",
                 color="franja_horaria",
-                color_discrete_sequence=["#0F766E", "#B45309", "#2563EB", "#BE123C", "#4D7C0F", "#7C2D12"],
+                color_discrete_sequence=["#0B4F39", "#B49A62", "#667A70", "#9A5C4A", "#627A8A", "#AAB7AF"],
                 labels={"pax_total": metrica_operacion, "franja_horaria": "Horario"}
             )
             fig_turnos.update_traces(hovertemplate=f"%{{x}}<br>{metrica_operacion}: %{{y:,.0f}}<extra></extra>")
@@ -1075,6 +1266,11 @@ with tabs[1]:
                 height=350
             )
             st.plotly_chart(fig_turnos, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                f"Compara {metrica_operacion.lower()} por franja horaria y turno de servicio.",
+                "Cuantificar la diferencia entre el horario de mayor actividad y el de menor actividad.",
+                "Escalonar entradas y descansos hacia las franjas pico; aprovechar las franjas valle para preparación.",
+            )
 
             # Alerta ejecutiva de Yield Management
             if not df_turno_agg.empty:
@@ -1089,7 +1285,7 @@ with tabs[1]:
                 """, unsafe_allow_html=True)
 
         with c_cap2:
-            st.subheader("🪑 Matriz Recomendada de Distribución de Mesas")
+            st.subheader("Distribución recomendada de mesas")
             st.caption("Estructura de configuración de sala sugerida para maximizar la rotación y evitar mesas ociosas:")
 
             # Clasificación de reservas por tamaño de mesa
@@ -1112,7 +1308,7 @@ with tabs[1]:
                 df_mesas_agg,
                 names="Configuración de Mesa",
                 values="Nº Reservas",
-                color_discrete_sequence=["#C5A059", "#10B981", "#38BDF8", "#F59E0B"]
+                color_discrete_sequence=["#B49A62", "#5D806B", "#627A8A", "#A9695E"]
             )
             fig_mesas.update_layout(
                 paper_bgcolor="rgba(255,255,255,0.7)",
@@ -1122,6 +1318,11 @@ with tabs[1]:
                 legend=dict(font=dict(color="#0F172A"))
             )
             st.plotly_chart(fig_mesas, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                "Clasifica las reservas de la tabla de hechos por tamaño de grupo y muestra su proporción.",
+                "Conocer qué configuraciones de mesa se solicitan con más frecuencia.",
+                "Ajustar el montaje previsto a la mezcla de grupos observada y validar el resultado con el equipo de sala.",
+            )
 
             st.dataframe(
                 df_mesas_agg.style.format({"Nº Reservas": "{:,}", "Porcentaje": "{:.1f}%"}),
@@ -1140,9 +1341,8 @@ with tabs[1]:
     if df_filtrado.empty:
         st.warning("⚠️ No hay registros para segmentación de clientes.")
     else:
-        st.subheader("👑 Segmentación de Clientes: VIPs, Fidelidad y Perfil Familiar")
+        st.subheader("Perfil de huéspedes y necesidades de servicio")
         st.caption("Permite anticipar servicios especiales, atenciones protocolares y requerimientos de montaje infantil.")
-        st.markdown("<div class='section-note'><strong>Cómo funciona:</strong> clasifica las reservas por atención, tamaño familiar y necesidades especiales para que el maître prepare el servicio antes de la llegada.</div>", unsafe_allow_html=True)
 
         col_seg1, col_seg2 = st.columns([1, 1.4])
 
@@ -1159,10 +1359,10 @@ with tabs[1]:
                 hole=0.45,
                 color="categoria_atencion",
                 color_discrete_map={
-                    "VIP": "#EF4444",
-                    "Fidelidad": "#C5A059",
-                    "Especial": "#38BDF8",
-                    "Standard": "#64748B"
+                    "VIP": "#9A5C4A",
+                    "Fidelidad": "#B49A62",
+                    "Especial": "#627A8A",
+                    "Standard": "#8A9990"
                 }
             )
             fig_atencion.update_layout(
@@ -1173,9 +1373,14 @@ with tabs[1]:
                 legend=dict(orientation="h", y=-0.1)
             )
             st.plotly_chart(fig_atencion, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                "Relaciona la categoría de atención de la dimensión correspondiente con el número de reservas.",
+                "Entender la composición de reservas por protocolo, fidelidad y atención estándar.",
+                "Anticipar protocolos y recursos de servicio para las categorías que representen mayor volumen.",
+            )
 
         with col_seg2:
-            st.markdown("#### 👶 Requerimientos Especiales: Mobiliario Infantil")
+            st.markdown("#### Mobiliario infantil")
             total_bebes_res = int(df_filtrado["num_bebes"].sum())
             total_ninos_res = int(df_filtrado["num_ninos"].sum())
             reservas_con_periquera = int(df_filtrado["requiere_periquera"].sum())
@@ -1209,9 +1414,8 @@ with tabs[1]:
     if df_filtrado.empty:
         st.warning("⚠️ No hay datos para el análisis de Cross-Dining.")
     else:
-        st.subheader("🏨 Análisis de Flujo Inter-Hotel (Cross-Dining Experience)")
+        st.subheader("Flujo de comensales entre hoteles")
         st.caption("Rastrea el intercambio de comensales entre hoteles: desde el hotel donde se hospeda el huésped hasta el hotel donde cena.")
-        st.markdown("<div class='section-note'><strong>Resultado esperado:</strong> medir el valor del cross-dining y localizar restaurantes imán para coordinar transporte, reservas y capacidad entre hoteles.</div>", unsafe_allow_html=True)
 
         # Matriz de flujo: Hotel Hospedaje -> Hotel Restaurante
         df_flujo = df_filtrado.groupby(["cod_hotel_hospedaje", "cod_hotel_restaurante", "hotel_hospedaje", "hotel_restaurante"]).agg(
@@ -1235,15 +1439,15 @@ with tabs[1]:
             node=dict(
                 pad=18,
                 thickness=20,
-                line=dict(color="black", width=0.5),
+                line=dict(color="#F4F7F4", width=0.8),
                 label=nodos,
-                color=["#C5A059"] * len(hoteles_origen_unicos) + ["#38BDF8"] * len(hoteles_destino_unicos)
+                color=["#B49A62"] * len(hoteles_origen_unicos) + ["#0B4F39"] * len(hoteles_destino_unicos)
             ),
             link=dict(
                 source=sources,
                 target=targets,
                 value=values,
-                color="rgba(197, 160, 89, 0.3)"
+                color="rgba(180, 154, 98, 0.3)"
             )
         )])
         fig_sankey.update_layout(
@@ -1254,12 +1458,17 @@ with tabs[1]:
             margin=dict(l=20, r=20, t=40, b=20)
         )
         st.plotly_chart(fig_sankey, use_container_width=True, config=CONFIG_GRAFICAS)
+        mostrar_analisis_grafica(
+            "Conecta el hotel de hospedaje con el hotel restaurante y pondera cada flujo por comensales.",
+            "Medir los movimientos de cross-dining entre origen y destino dentro de la selección.",
+            "Coordinar transporte y disponibilidad de mesa en los destinos que reciben más huéspedes externos.",
+        )
 
         st.markdown("---")
         c_cd1, c_cd2 = st.columns(2)
 
         with c_cd1:
-            st.subheader("🔄 Matriz de Movilidad Inter-Hotel (Comensales Pax)")
+            st.subheader("Movilidad entre hoteles")
             pivot_cross = df_filtrado.pivot_table(
                 index="hotel_hospedaje",
                 columns="hotel_restaurante",
@@ -1270,7 +1479,7 @@ with tabs[1]:
             fig_cross_heat = px.imshow(
                 pivot_cross,
                 labels=dict(x="Hotel Restaurante (Destino)", y="Hotel Hospedaje (Origen)", color="Pax"),
-                color_continuous_scale="Blues",
+                color_continuous_scale=["#F2F5F2", "#0B4F39"],
             )
             fig_cross_heat.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -1280,9 +1489,14 @@ with tabs[1]:
                 height=340
             )
             st.plotly_chart(fig_cross_heat, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                "Cruza hoteles de hospedaje y de restaurante; la intensidad representa comensales del flujo.",
+                "Comparar rápidamente las rutas interhotel más y menos utilizadas.",
+                "Priorizar coordinación entre hoteles en las rutas de mayor volumen y revisar las de baja utilización.",
+            )
 
         with c_cd2:
-            st.subheader("🧲 Restaurantes 'Imán' de Comensales Externos")
+            st.subheader("Restaurantes con mayor recepción externa")
             st.caption("Restaurantes que más huéspedes atraen provenientes de otros hoteles del complejo:")
 
             df_iman = df_filtrado[df_filtrado["es_cross_dining"] == True].groupby(["nombre_restaurante", "especialidad", "hotel_restaurante"]).agg(
@@ -1296,7 +1510,7 @@ with tabs[1]:
                 y="nombre_restaurante",
                 orientation="h",
                 color="pax_externos",
-                color_continuous_scale="Viridis",
+                color_continuous_scale=["#E7EEE9", "#0B4F39"],
                 labels={"pax_externos": "Pax Externos", "nombre_restaurante": "Restaurante"}
             )
             fig_iman.update_layout(
@@ -1308,6 +1522,11 @@ with tabs[1]:
                 yaxis=dict(autorange="reversed")
             )
             st.plotly_chart(fig_iman, use_container_width=True, config=CONFIG_GRAFICAS)
+            mostrar_analisis_grafica(
+                "Filtra reservas marcadas como cross-dining y suma comensales externos por restaurante.",
+                "Identificar restaurantes que atraen más huéspedes de otros hoteles.",
+                "Asegurar capacidad y coordinación de llegadas en los restaurantes con mayor recepción externa.",
+            )
 
 
 # =====================================================================
@@ -1319,7 +1538,7 @@ with tabs[1]:
     st.caption(f"{len(df_filtrado):,} reservas incluidas en este análisis.")
     st.subheader("Pronóstico de comensales")
     st.caption("La red neuronal estima la demanda futura con el historial del periodo y los filtros seleccionados.")
-    st.markdown("<div class='section-note'><strong>Cómo leerlo:</strong> la línea azul muestra datos registrados y la dorada es una estimación. El error de validación ayuda a entender cuánto puede desviarse; no es una garantía.</div>", unsafe_allow_html=True)
+    st.caption("La línea verde muestra el histórico y la dorada, la estimación. El error de validación es orientativo.")
 
     if len(df_filtrado) < 50:
         st.warning("Esta selección tiene menos de 50 reservas. Amplía el periodo o quita filtros para preparar el pronóstico.")
@@ -1367,7 +1586,7 @@ with tabs[1]:
                 y=df_hist_real["total_pax"],
                 mode="lines+markers",
                 name="Histórico real",
-                line=dict(color="#38BDF8", width=3)
+                    line=dict(color="#0B4F39", width=3)
             ))
             if not df_proj_dia.empty:
                 fig_proj.add_trace(go.Scatter(
@@ -1375,7 +1594,7 @@ with tabs[1]:
                     y=df_proj_dia["pax_predichos"],
                     mode="lines",
                     name="Pronóstico neuronal",
-                    line=dict(color="#C5A059", width=2)
+                    line=dict(color="#B49A62", width=2)
                 ))
 
             fig_proj.update_layout(
@@ -1390,9 +1609,13 @@ with tabs[1]:
             fig_proj.update_xaxes(showgrid=True, gridcolor="#E5E7EB", title_font=dict(color="#1F2937"), tickfont=dict(color="#374151"))
             fig_proj.update_yaxes(showgrid=True, gridcolor="#E5E7EB", title_font=dict(color="#1F2937"), tickfont=dict(color="#374151"))
             st.plotly_chart(fig_proj, use_container_width=True, config=CONFIG_GRAFICAS)
-            st.markdown("<div class='section-note'><strong>Para planificar:</strong> usa los días estimados como referencia para preparar compras, horarios, mesas y personal. Compara siempre la previsión con las reservas confirmadas.</div>", unsafe_allow_html=True)
+            mostrar_analisis_grafica(
+                "Compara pax históricos agrupados por fecha con la estimación diaria del modelo neuronal.",
+                "Observar la dirección y magnitud esperada de la demanda para el horizonte elegido.",
+                "Usar la proyección como escenario de planificación y contrastarla con las reservas confirmadas.",
+            )
 
-            st.markdown("#### 📊 Resumen ejecutivo mensual")
+            st.markdown("#### Resumen mensual")
             resumen_mensual = df_futuro.groupby("mes", as_index=False).agg(
                 pax_previstos=("pax_predichos", "sum"),
                 promedio_diario=("pax_predichos", "mean"),
@@ -1410,19 +1633,19 @@ with tabs[1]:
 
             st.markdown("---")
             # SIMULADOR DE CAPACIDAD Y PERSONAL (STAFFING & OPERATIONAL SIMULATOR)
-            st.subheader("🧮 Simulador Interactivo de Capacidad y Dotación de Personal (A&B)")
+            st.subheader("Simulador de capacidad y dotación de personal")
             st.caption("Calcula en tiempo real las necesidades de meseros, cocineros y costos operativos en base a la ocupación proyectada:")
 
         s_col1, s_col2 = st.columns([1, 1.2])
         with s_col1:
-            st.markdown("##### ⚙️ Parámetros de Simulación")
+            st.markdown("##### Parámetros de simulación")
             sim_ocupacion = st.slider("Ocupación Hotelera Proyectada del Complejo (%):", min_value=50, max_value=100, value=85, step=5)
             sim_ratio_mesero = st.slider("Ratio Comensales por Mesero / Rango de Sala:", min_value=8, max_value=24, value=14, step=2)
             sim_ratio_cocina = st.slider("Ratio Comensales por Personal de Cocina:", min_value=15, max_value=40, value=25, step=5)
             sim_restaurante = st.selectbox("Seleccionar Restaurante para Simular:", options=["Todos los Restaurantes (Global)"] + sorted(df_master["nombre_restaurante"].unique().tolist()))
 
         with s_col2:
-            st.markdown("##### 📋 Resultados Proyectados de Operación")
+            st.markdown("##### Resultados de operación")
             if sim_restaurante == "Todos los Restaurantes (Global)":
                 cap_base = sum([r["capacidad_maxima_pax"] for r in RESTAURANTES_CATALOGO]) * 3
             else:
@@ -1458,7 +1681,7 @@ with tabs[2]:
     df_filtrado = filtrar_analisis(df_master, "datos", ["hotel", "restaurant", "shift", "attention", "cross"])
     from dashboard_assistant import responder_consulta
 
-    st.subheader("Pregúntale a tus datos")
+    st.subheader("Consulta de datos")
     st.caption("Escribe una pregunta sencilla sobre las reservas. Las respuestas se calculan aquí mismo con los datos seleccionados.")
     st.info("Puedes preguntar, por ejemplo: «¿Qué restaurante tuvo más comensales?», «¿Cuántas reservas hubo en agosto?» o «Filtra por turno 2». También puedes pedir «restablece filtros».")
 
@@ -1513,7 +1736,7 @@ with tabs[2]:
 # =====================================================================
 with tabs[2]:
     st.divider()
-    st.subheader("📥 Exportación Multiformato de Reportes Operativos")
+    st.subheader("Exportación de reportes operativos")
     st.caption("Descarga la información procesada y limpia para análisis externo en Excel, CSV o reportes ejecutivos.")
 
     report_total = len(df_filtrado)
@@ -1591,91 +1814,129 @@ Cargar un año completo, entrenar el modelo y comparar cada predicción con el r
 """
     st.download_button("📄 Descargar informe ejecutivo TXT", reporte_direccion, "informe_direccion_bahia_principe.txt", "text/plain", use_container_width=True)
 
-    if df_filtrado.empty:
-        st.warning("No hay datos filtrados para exportar.")
+
+# =====================================================================
+# TAB 9: RESULTADOS DEL PROYECTO E IMPACTO OPERATIVO
+# =====================================================================
+with tabs[3]:
+    st.subheader("Resultados del Proyecto & Impacto Operativo")
+    st.caption("Alcance, valor operativo y capacidades disponibles en la plataforma.")
+
+    proyecto_df = df_master.copy()
+    if proyecto_df.empty:
+        st.info("Carga reservas para ver resultados cuantitativos del proyecto.")
+        proyecto_reservas = 0
+        proyecto_pax = 0
+        proyecto_hoteles = 0
+        proyecto_restaurantes = 0
+        proyecto_promedio = 0
     else:
-        st.markdown("#### 🔍 Vista Previa de Datos Filtrados")
-        cols_export = [
-            "id_reserva", "id_fecha", "hotel_restaurante", "nombre_restaurante",
-            "especialidad", "hotel_hospedaje", "franja_horaria", "categoria_atencion",
-            "num_adultos", "num_ninos", "num_bebes", "total_pax", "es_cross_dining",
-            "requiere_periquera", "observaciones_limpias"
-        ]
-        df_export = df_filtrado[cols_export].copy()
-        st.dataframe(df_export.head(10), use_container_width=True, hide_index=True)
+        proyecto_reservas = len(proyecto_df)
+        proyecto_pax = int(proyecto_df["total_pax"].sum())
+        proyecto_hoteles = proyecto_df["hotel_restaurante"].nunique()
+        proyecto_restaurantes = proyecto_df["nombre_restaurante"].nunique()
+        proyecto_promedio = round(proyecto_pax / proyecto_reservas, 2) if proyecto_reservas else 0
 
-        exp_col1, exp_col2 = st.columns(2)
+    proyecto_kpis = st.columns(4)
+    proyecto_kpis[0].metric("Reservas centralizadas", f"{proyecto_reservas:,}")
+    proyecto_kpis[1].metric("Comensales procesados", f"{proyecto_pax:,}")
+    proyecto_kpis[2].metric("Hoteles / restaurantes", f"{proyecto_hoteles} / {proyecto_restaurantes}")
+    proyecto_kpis[3].metric("Pax por reserva", f"{proyecto_promedio}")
 
-        # 1. Exportación CSV
-        with exp_col1:
-            csv_buffer = io.StringIO()
-            df_export.to_csv(csv_buffer, index=False, encoding="utf-8")
-            st.download_button(
-                label="📄 Descargar Dataset Filtrado en CSV",
-                data=csv_buffer.getvalue(),
-                file_name=f"bahia_principe_reservas_{f_inicio}_{f_fin}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+    st.markdown("---")
+    st.markdown("### Problema original vs. solución actual")
+    alcance_col, solucion_col = st.columns(2)
+    with alcance_col:
+        st.markdown("""
+            **Alcance inicial planteado**
 
-        # 2. Exportación Excel Multihija
-        with exp_col2:
-            excel_buffer = io.BytesIO()
-            with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-                # Hoja 1: Hechos Filtrados
-                df_export.to_excel(writer, sheet_name="Reservas_Filtradas", index=False)
-                # Hoja 2: Resumen por Restaurante
-                df_resumen_rest = df_filtrado.groupby(["nombre_restaurante", "hotel_restaurante", "especialidad"]).agg(
-                    total_pax=("total_pax", "sum"),
-                    total_reservas=("id_reserva", "count"),
-                    pax_cross_dining=("es_cross_dining", lambda x: df_filtrado.loc[x[x == True].index, "total_pax"].sum()),
-                    periqueras=("requiere_periquera", "sum")
-                ).reset_index()
-                df_resumen_rest.to_excel(writer, sheet_name="Resumen_Restaurantes", index=False)
-                # Hoja 3: Lista Maître (VIPs)
-                df_vip = df_filtrado[df_filtrado["categoria_atencion"].isin(["VIP", "Fidelidad", "Especial"])][
-                    ["id_reserva", "id_fecha", "horario_texto", "nombre_restaurante", "hotel_hospedaje", "categoria_atencion", "total_pax", "observaciones_limpias"]
-                ]
-                df_vip.to_excel(writer, sheet_name="Alertas_Maitre", index=False)
+            Una plataforma para cubrir múltiples áreas corporativas y la operación completa del complejo. Ese alcance reunía fuentes, procesos y necesidades heterogéneas difíciles de consolidar con fiabilidad en una sola entrega.
+        """)
+    with solucion_col:
+        st.markdown("""
+            **Foco implementado**
 
-            excel_buffer.seek(0)
-            st.download_button(
-                label="📊 Descargar Reporte Ejecutivo en Excel (.xlsx)",
-                data=excel_buffer.getvalue(),
-                file_name=f"Reporte_Ejecutivo_Bahia_Principe_{f_inicio}_{f_fin}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary"
-            )
+            Un sistema BI centrado en la operación crítica de los restaurantes de especialidad: reservas, hotel, restaurante, fecha, turno, tipo de atención, comensales y movilidad interhotel. El foco permite validar datos y decisiones en un dominio operativo concreto.
+        """)
+    st.markdown("---")
+    st.markdown("### Resultados y valor operativo")
+    impacto_col, evidencia_col = st.columns([1.1, 1])
+    with impacto_col:
+        st.markdown("""
+            <div class="impact-item"><strong>Centralización de datos</strong><br>El ETL limpia y consolida archivos de reservas en un modelo dimensional con hechos y dimensiones de tiempo, hotel, servicio y atención.</div>
+            <div class="impact-item"><strong>Optimización de A&B</strong><br>Las vistas comparan demanda por restaurante, turno y hotel, muestran mezclas de grupos y ayudan a planificar dotación. La medición real de ocupación depende de contar con aforos confiables.</div>
+            <div class="impact-item"><strong>Decisión asistida por IA</strong><br>El backend FastAPI incorpora el endpoint <code>/api/v1/ai/consult</code> con Gemini para generar análisis y recomendaciones basados en KPIs. Requiere <code>GEMINI_API_KEY</code>.</div>
+        """, unsafe_allow_html=True)
+        st.caption("El chat de esta pestaña de Streamlit responde con reglas locales; no invoca Gemini directamente.")
 
-        st.markdown("---")
-        st.markdown("#### 📑 Resumen Ejecutivo en Texto para Dirección de A&B")
-        texto_resumen = f"""
-================================================================================
-REPORTE EJECUTIVO DE OPERACIÓN DE RESTAURANTES DE ESPECIALIDAD
-HOTELES BAHÍA PRÍNCIPE
-Periodo Analizado: {f_inicio} al {f_fin}
-================================================================================
+    with evidencia_col:
+        st.markdown("#### Evidencia del periodo cargado")
+        if not proyecto_df.empty:
+            restaurantes_pax = proyecto_df.groupby("nombre_restaurante")["total_pax"].sum().sort_values(ascending=False)
+            top_restaurant = str(restaurantes_pax.index[0])
+            top_restaurant_pax = int(restaurantes_pax.iloc[0])
+            st.markdown(f"**Mayor volumen:** {top_restaurant} · {top_restaurant_pax:,} pax")
 
-1. INDICADORES CLAVE DE VOLUMEN:
-   - Total de Reservas Procesadas: {total_reservas:,}
-   - Total de Comensales (Pax): {total_pax:,}
-   - Desglose: {total_adultos:,} Adultos | {total_ninos:,} Niños | {total_bebes:,} Bebés
-   - Promedio de Comensales por Mesa: {prom_pax_reserva} pax/reserva
+            dolce_vita = restaurantes_pax[restaurantes_pax.index.str.casefold() == "dolce vita"]
+            alux = restaurantes_pax[restaurantes_pax.index.str.casefold() == "alux"]
+            if not dolce_vita.empty or not alux.empty:
+                alux_value = int(alux.iloc[0]) if not alux.empty else 0
+                dolce_value = int(dolce_vita.iloc[0]) if not dolce_vita.empty else 0
+                st.markdown(f"**Comparativo Alux / Dolce Vita:** {alux_value:,} / {dolce_value:,} pax")
 
-2. CROSS-DINING INTER-HOTEL:
-   - Reservas Cross-Dining: {total_cross:,} ({pct_cross}%)
-   - Los huéspedes que cenan en un hotel distinto al de hospedaje representan {round(pct_cross, 1)}% de la operación total.
+            demanda_turno = proyecto_df.groupby("franja_horaria")["total_pax"].sum().sort_values(ascending=False)
+            if not demanda_turno.empty:
+                st.markdown(f"**Franja con más pax:** {demanda_turno.index[0]} · {int(demanda_turno.iloc[0]):,} pax")
+        else:
+            st.caption("Los comparativos aparecerán después de cargar datos.")
+        st.caption("Estos volúmenes describen el periodo cargado; por sí solos no demuestran ahorro ni ROI.")
 
-3. REQUERIMIENTOS ESPECIALES Y SERVICIO VIP:
-   - Mobiliario Infantil: Se requieren {reservas_con_periquera:,} periqueras montadas en sala.
-   - Huéspedes VIP y Fidelidad registrados: {len(df_filtrado[df_filtrado['categoria_atencion'].isin(['VIP', 'Fidelidad'])]):,} reservas con protocolo especial.
+    st.markdown("---")
+    st.markdown("### Innovación y Valor Aportado del Proyecto")
+    innovacion_cols = st.columns(3)
+    with innovacion_cols[0]:
+        st.markdown("""
+            **De la operación a ciegas al dato oportuno**
 
-Generado automáticamente por el Sistema de Business Intelligence Bahía Príncipe.
-================================================================================
-"""
-        st.text_area("Copia rápida del resumen ejecutivo:", value=texto_resumen, height=220)
+            Frente a reportes en papel o registros aislados, el ETL consolida archivos de reservas y los organiza en un modelo dimensional común. Streamlit actualiza su lectura en intervalos de caché de hasta 60 segundos. La conexión cloud usa PostgreSQL y admite Supabase mediante `DATABASE_URL`; el proveedor depende de la configuración de cada despliegue.
+        """)
+    with innovacion_cols[1]:
+        st.markdown("""
+            **De la complejidad a la especialización estratégica en A&B**
 
+            Focalizar el proyecto en restaurantes de especialidad permite observar afluencia por restaurante, fecha y turno, y preparar capacidad y dotación con datos comparables. Los tiempos de espera y la satisfacción del huésped no se miden directamente todavía: requieren capturar esas variables en las fuentes.
+        """)
+    with innovacion_cols[2]:
+        st.markdown("""
+            **IA como consultor gerencial**
+
+            El backend FastAPI ofrece Gemini para convertir KPIs y una consulta ejecutiva en resumen, análisis, recomendaciones y nivel de riesgo. Requiere `GEMINI_API_KEY`. El chat de Streamlit opera con reglas locales y las tarjetas explicativas de gráficas son textos guiados; no son respuestas generadas por Gemini.
+        """)
+
+    st.markdown("---")
+    st.markdown("### Plataforma y estado de integración")
+    database_url_configured = get_database_url().lower()
+    if "supabase" in database_url_configured:
+        database_status = "PostgreSQL en Supabase configurado"
+    elif database_url_configured.startswith("postgresql"):
+        database_status = "PostgreSQL externo configurado"
+    else:
+        database_status = "SQLite local activo; Supabase requiere configurar DATABASE_URL"
+
+    integration_col, next_steps_col = st.columns(2)
+    with integration_col:
+        st.markdown(f"<div class='status-line'><span>Base de datos</span><span class='status-value'>{database_status}</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='status-line'><span>Modelo analítico</span><span class='status-value'>Esquema dimensional de reservas</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='status-line'><span>Pronóstico</span><span class='status-value'>Modelo neuronal de demanda diaria</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='status-line'><span>Gemini</span><span class='status-value'>Implementado en la API; requiere clave en backend</span></div>", unsafe_allow_html=True)
+    with next_steps_col:
+        st.markdown("#### Siguientes pasos para ampliar el impacto")
+        st.markdown("""
+            - Completar y validar aforos por restaurante y turno antes de interpretar porcentajes de ocupación.
+            - Comparar previsiones con reservas reales para medir error operativo en el tiempo.
+            - Registrar cambios de dotación y resultados para evaluar productividad y servicio.
+            - Mantener `DATABASE_URL` y `GEMINI_API_KEY` en los secretos del despliegue; no se muestran credenciales en el dashboard.
+        """)
 
 # =====================================================================
 # PIE DE PÁGINA CORPORATIVO
