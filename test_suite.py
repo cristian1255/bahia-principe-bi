@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import inspect
 from sklearn.ensemble import RandomForestRegressor
 
-from config_db import DimServicio, FactReservasRestaurantes, get_db_session, get_engine, init_db
+from config_db import DimAtencion, DimServicio, FactReservasRestaurantes, get_db_session, get_engine, init_db
 from etl.etl_pipeline import cargar_dataframe, transformar_datos
 from main import get_kpis, obtener_kpis_resumen
 
@@ -57,6 +57,53 @@ class TestBahiaPrincipeBI(unittest.TestCase):
         self.assertEqual(clean.iloc[0]["num_habs_invitadas"], 2)
         self.assertEqual(clean.iloc[0]["habitacion"], "0102")
         self.assertEqual(clean.iloc[0]["titular"], "TEST PERSON")
+
+    def test_transform_cleans_missing_values_and_normalizes_turn_from_hour(self):
+        raw = pd.DataFrame([
+            {
+                "Id": 8051,
+                "Fecha Servicio": "2026-09-15",
+                "Servicio": "ALI",
+                "Turno": "201",
+                "Horario": "17:30 - 17:30",
+                "Atención": "NaN",
+                "Hotel": "1",
+            },
+            {
+                "Id": 8052,
+                "Fecha Servicio": "2026-09-15",
+                "Servicio": "ALI",
+                "Turno": "208",
+                "Horario": "21:00 - 21:05",
+                "Atención": "ATE05",
+                "Hotel": "1",
+            },
+            {
+                "Id": 8053,
+                "Fecha Servicio": "2026-09-15",
+                "Servicio": "ALI",
+                "Turno": "201",
+                "Horario": "NaN",
+                "Atención": "null",
+                "Hotel": "1",
+            },
+        ])
+
+        clean = transformar_datos(raw, "ALUX").set_index("id")
+
+        self.assertEqual(clean.loc[8051, "turno"], 1)
+        self.assertEqual(clean.loc[8051, "horario"], "17:30")
+        self.assertTrue(pd.isna(clean.loc[8051, "atencion"]))
+        self.assertEqual(clean.loc[8052, "turno"], 8)
+        self.assertEqual(clean.loc[8052, "horario"], "21:00 - 21:05")
+        self.assertEqual(clean.loc[8053, "turno"], 0)
+        self.assertTrue(pd.isna(clean.loc[8053, "horario"]))
+        self.assertTrue(pd.isna(clean.loc[8053, "atencion"]))
+
+        self.assertEqual(cargar_dataframe(raw, "ALUX", self.engine), 3)
+        with get_db_session(self.engine) as session:
+            missing_attention = session.query(FactReservasRestaurantes).filter_by(id_reserva=8051).first()
+            self.assertIsNone(session.get(DimAtencion, missing_attention.id_atencion).atencion)
 
     def test_load_and_api_kpis_are_idempotent(self):
         raw = pd.DataFrame([

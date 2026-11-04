@@ -352,7 +352,7 @@ def cargar_dataset_completo() -> pd.DataFrame:
                COALESCE(h.hotel_res, h.codigo_hotel) AS hotel_hospedaje,
                f.turno, f.horario AS horario_texto, f.horario AS franja_horaria,
                f.turno AS id_horario, COALESCE(a.atencion, 'Sin especificar') AS categoria_atencion,
-               0 AS prioridad_servicio, f.id_atencion AS id_tipo_atencion,
+               0 AS prioridad_servicio, a.atencion AS id_tipo_atencion,
                f.adultos AS num_adultos, f.ninos AS num_ninos, f.bebes AS num_bebes,
                f.pax_total AS total_pax, f.num_habs_invitadas AS habs_invitadas,
                CASE WHEN UPPER(COALESCE(f.cross_flag, '')) IN ('Y', 'YES', 'TRUE', '1', 'SI', 'S')
@@ -378,17 +378,25 @@ def cargar_dataset_completo() -> pd.DataFrame:
                 df_star[hotel_column] = df_star[hotel_column].map(
                     lambda value: hotel_names.get(str(value).strip().lower(), value)
                 )
-            mapped_attention = df_star["id_tipo_atencion"].map(attention_names)
-            df_star["categoria_atencion"] = mapped_attention.fillna(df_star["categoria_atencion"])
-            df_star["categoria_atencion"] = df_star["categoria_atencion"].replace(attention_names)
-            df_star["id_tipo_atencion"] = mapped_attention.fillna(df_star["categoria_atencion"])
-            df_star["categoria_atencion"] = (
-                df_star["categoria_atencion"].fillna("Sin especificar").astype(str)
-            )
-            df_star["id_tipo_atencion"] = df_star["categoria_atencion"]
+            raw_attention = df_star["categoria_atencion"].astype("string").str.strip()
+            attention_keys = raw_attention.str.upper()
+            category_labels = {
+                "STANDARD": "Standard",
+                "VIP": "VIP",
+                "FIDELIDAD": "Fidelidad",
+                "ESPECIAL": "Especial",
+                "SIN ESPECIFICAR": "Sin especificar",
+                "OTRO TIPO DE ATENCIÓN": "Otro tipo de atención",
+            }
+            mapped_attention = attention_keys.map(attention_names).fillna(attention_keys.map(category_labels))
+            missing_attention = attention_keys.isna() | attention_keys.isin({"", "NAN", "NONE", "NULL", "<NA>", "N/A"})
+            df_star["categoria_atencion"] = mapped_attention.fillna("Otro tipo de atención")
+            df_star.loc[missing_attention, "categoria_atencion"] = "Sin especificar"
             df_star["id_fecha"] = pd.to_datetime(df_star["id_fecha"]).dt.date
-            df_star["horario_texto"] = df_star["horario_texto"].fillna("Horario no registrado").astype(str)
-            df_star["franja_horaria"] = df_star["franja_horaria"].fillna("Horario no registrado").astype(str)
+            horario_limpio = df_star["horario_texto"].astype("string").str.strip()
+            horario_missing = horario_limpio.isna() | horario_limpio.str.casefold().isin({"", "nan", "none", "null", "<na>", "n/a"})
+            df_star["horario_texto"] = horario_limpio.mask(horario_missing, "Horario no registrado").astype(str)
+            df_star["franja_horaria"] = df_star["horario_texto"]
             df_star["es_fin_de_semana"] = pd.to_datetime(df_star["id_fecha"]).dt.weekday.isin([4, 5, 6])
             df_star["temporada"] = df_star["mes"].map(
                 lambda month: "Alta" if month in (12, 1, 2, 3, 4, 7, 8) else ("Media" if month in (5, 6) else "Baja")
@@ -503,6 +511,9 @@ def filtrar_analisis(data: pd.DataFrame, section: str, fields: List[str]) -> pd.
                 if field == "shift":
                     schedule_labels = {}
                     for value in options:
+                        if value == 0:
+                            schedule_labels[value] = "Horario no registrado"
+                            continue
                         mode = data.loc[data[column] == value, "horario_texto"].dropna().mode()
                         schedule_labels[value] = f"Turno {value} · {mode.iloc[0]}" if not mode.empty else f"Turno {value}"
                     formatter = lambda value, labels=schedule_labels: labels.get(value, str(value))

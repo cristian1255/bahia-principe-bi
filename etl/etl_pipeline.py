@@ -379,7 +379,54 @@ def _limpiar_cadena(value):
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     cleaned = re.sub(r"\s+", " ", str(value)).strip()
+    if cleaned.casefold() in {"nan", "none", "null", "<na>", "nat"}:
+        return None
     return cleaned or None
+
+
+_SLOT_POR_HORA = {
+    "17:30": 1,
+    "18:00": 2,
+    "18:30": 3,
+    "19:00": 4,
+    "19:30": 5,
+    "20:00": 6,
+    "20:30": 7,
+    "21:00": 8,
+    "21:30": 9,
+}
+
+
+def _normalizar_horario(value):
+    """Limpia el horario y no representa una hora única como un intervalo."""
+    cleaned = _limpiar_cadena(value)
+    if cleaned is None:
+        return None
+
+    match = re.fullmatch(r"(\d{1,2}:\d{2})(?:\s*-\s*(\d{1,2}:\d{2}))?", cleaned)
+    if not match:
+        return cleaned
+
+    start = match.group(1).zfill(5)
+    end = match.group(2)
+    if end is None or end.zfill(5) == start:
+        return start
+    return f"{start} - {end.zfill(5)}"
+
+
+def _normalizar_turno(value, horario) -> int:
+    """Deriva el turno desde la hora; cero identifica un horario desconocido."""
+    normalized_hour = _normalizar_horario(horario)
+    if normalized_hour:
+        start = normalized_hour.split(" - ", 1)[0]
+        if start in _SLOT_POR_HORA:
+            return _SLOT_POR_HORA[start]
+
+    try:
+        source_turn = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return source_turn if 1 <= source_turn <= 9 else 0
 
 
 def _a_bool(value) -> bool:
@@ -416,14 +463,23 @@ def transformar_datos(df: pd.DataFrame, restaurante: str) -> pd.DataFrame:
     for column in ("adultos", "ninos", "bebes", "num_habs_invitadas"):
         clean[column] = pd.to_numeric(clean[column], errors="coerce").fillna(0).clip(lower=0).astype(int)
     clean["pax_total"] = clean["adultos"] + clean["ninos"] + clean["bebes"]
-    clean["turno"] = pd.to_numeric(clean["turno"], errors="coerce").fillna(1).astype(int)
+    clean["turno"] = pd.to_numeric(clean["turno"], errors="coerce").fillna(0).astype(int)
 
     text_columns = [
         "servicio", "hotel", "hotel_res", "atencion", "usuario", "origen", "habitacion", "titular",
         "mesa", "horario", "obs", "cross_flag", "remarks",
     ]
     for column in text_columns:
-        clean[column] = clean[column].map(_limpiar_cadena)
+        clean[column] = pd.Series(
+            [_limpiar_cadena(value) for value in clean[column]],
+            index=clean.index,
+            dtype="object",
+        )
+    clean["horario"] = clean["horario"].map(_normalizar_horario)
+    clean["turno"] = [
+        _normalizar_turno(source_turn, horario)
+        for source_turn, horario in zip(clean["turno"], clean["horario"])
+    ]
     clean["cargado"] = clean["cargado"].map(_a_bool)
     clean["restaurante"] = _limpiar_cadena(restaurante) or "Sin nombre"
     return clean.reset_index(drop=True)
