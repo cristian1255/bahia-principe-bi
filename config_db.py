@@ -94,6 +94,14 @@ class FactReservasRestaurantes(Base):
 
 def get_database_url() -> str:
     db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        try:
+            import streamlit as st
+            from streamlit.errors import StreamlitSecretNotFoundError
+
+            db_url = st.secrets.get("DATABASE_URL")
+        except StreamlitSecretNotFoundError:
+            db_url = None
     if db_url:
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)

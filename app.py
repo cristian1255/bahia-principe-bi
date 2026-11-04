@@ -1199,54 +1199,6 @@ with tabs[1]:
                 hide_index=True
             )
 
-        st.markdown("---")
-        st.subheader("🚨 Consola Operativa del Maître: Clientes VIP y Atenciones Prioritarias")
-        st.caption("Listado en vivo de comensales que requieren atención protocolar de Gerencia o montajes con requerimientos especiales:")
-
-        # Filtro de reservas VIP o con periquera o con observaciones
-        cols_maitre_req = [
-            "id_reserva", "id_fecha", "nombre_restaurante", "horario_texto",
-            "categoria_atencion", "id_tipo_atencion", "hotel_hospedaje",
-            "num_adultos", "num_ninos", "num_bebes", "total_pax",
-            "requiere_periquera", "observaciones_limpias"
-        ]
-        for col_m in cols_maitre_req:
-            if col_m not in df_filtrado.columns:
-                df_filtrado[col_m] = "N/A"
-
-        condicion_maitre = (
-            (df_filtrado["categoria_atencion"].isin(["VIP", "Fidelidad", "Especial"])) |
-            (df_filtrado["requiere_periquera"] == True) |
-            (df_filtrado["observaciones_limpias"] != "")
-        )
-        filtro_maitre = df_filtrado[condicion_maitre][cols_maitre_req].copy()
-
-        # Ordenar por fecha y horario
-        sort_cols = [c for c in ["id_fecha", "horario_texto"] if c in filtro_maitre.columns]
-        if sort_cols:
-            filtro_maitre = filtro_maitre.sort_values(sort_cols)
-
-        st.dataframe(
-            filtro_maitre.rename(columns={
-                "id_reserva": "ID Reserva",
-                "id_fecha": "Fecha",
-                "nombre_restaurante": "Restaurante",
-                "horario_texto": "Horario",
-                "categoria_atencion": "Categoría",
-                "id_tipo_atencion": "Tipo de atención",
-                "hotel_hospedaje": "Hotel Origen",
-                "num_adultos": "Adultos",
-                "num_ninos": "Niños",
-                "num_bebes": "Bebés",
-                "total_pax": "Total Pax",
-                "requiere_periquera": "Periquera",
-                "observaciones_limpias": "Observaciones / Alergias"
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-
-
 # =====================================================================
 # TAB 4: ANÁLISIS DE FLUJO INTER-HOTEL (CROSS-DINING)
 # =====================================================================
