@@ -667,29 +667,29 @@ with st.sidebar:
                     st.error(f"❌ Error en la carga masiva: {e}")
 
         with st.expander("Herramientas internas", expanded=False):
-        st.caption("Acciones de mantenimiento de la base de datos.")
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        with col_btn1:
-            if st.button("🔄 Recargar Demo", use_container_width=True, help="Regenera 1,250 reservas sintéticas en la base de datos"):
-                with st.spinner("Regenerando datos sintéticos..."):
-                    inicializar_demo_y_cargar_bd(1250)
+            st.caption("Acciones de mantenimiento de la base de datos.")
+            col_btn1, col_btn2, col_btn3 = st.columns(3)
+            with col_btn1:
+                if st.button("🔄 Recargar Demo", use_container_width=True, help="Regenera 1,250 reservas sintéticas en la base de datos"):
+                    with st.spinner("Regenerando datos sintéticos..."):
+                        inicializar_demo_y_cargar_bd(1250)
+                        st.cache_data.clear()
+                        st.rerun()
+            with col_btn2:
+                if st.button("🧹 Limpiar Caché", use_container_width=True):
                     st.cache_data.clear()
                     st.rerun()
-        with col_btn2:
-            if st.button("🧹 Limpiar Caché", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
-        with col_btn3:
-            if st.button("🗑️ Vaciar BD", use_container_width=True):
-                from etl_pipeline import limpiar_base_datos
-                limpiar_base_datos()
-                st.cache_data.clear()
-                st.success("Base vaciada. Ya puedes subir el histórico anual.")
-                st.rerun()
-
-        db_url_str = get_database_url()
-        tipo_bd = "PostgreSQL Local" if "localhost" in db_url_str or "127.0.0.1" in db_url_str else ("PostgreSQL Cloud" if "postgresql" in db_url_str else "SQLite Local")
-        st.caption(f"Origen: {tipo_bd} · {len(df_master):,} reservas cargadas")
+            with col_btn3:
+                if st.button("🗑️ Vaciar BD", use_container_width=True):
+                    from etl_pipeline import limpiar_base_datos
+                    limpiar_base_datos()
+                    st.cache_data.clear()
+                    st.success("Base vaciada. Ya puedes subir el histórico anual.")
+                    st.rerun()
+    
+            db_url_str = get_database_url()
+            tipo_bd = "PostgreSQL Local" if "localhost" in db_url_str or "127.0.0.1" in db_url_str else ("PostgreSQL Cloud" if "postgresql" in db_url_str else "SQLite Local")
+            st.caption(f"Origen: {tipo_bd} · {len(df_master):,} reservas cargadas")
 
 
     
