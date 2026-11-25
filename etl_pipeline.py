@@ -895,3 +895,36 @@ def limpiar_base_datos() -> None:
                 DimHotel,
             ):
                 session.query(model).delete(synchronize_session=False)
+
+
+ef inicializar_demo_y_cargar_bd(num_registros: int = 1250) -> Dict[str, Any]:
+    """
+    Puebla la base de datos con un dataset demo completo y genera archivos de muestra
+    ('sample_reservas.csv' y 'sample_reservas.xlsx') para facilitar pruebas inmediatas.
+    """
+    print(f"[*] Generando {num_registros} registros sintéticos para demostración...")
+    df_mock = generar_datos_mock(num_registros=num_registros)
+
+    # Guardar copias locales en CSV y Excel para pruebas de carga
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(base_dir, "sample_reservas.csv")
+    xlsx_path = os.path.join(base_dir, "sample_reservas.xlsx")
+
+    df_mock.to_csv(csv_path, index=False, encoding="utf-8")
+    df_mock.to_excel(xlsx_path, index=False, engine="openpyxl")
+    print(f"[+] Archivos de prueba generados:\n    - {csv_path}\n    - {xlsx_path}")
+
+    # Ejecutar ETL y cargar en BD
+    print("[*] Ejecutando ETL y cargando en Esquema en Estrella...")
+    df_transformado, resumen = transformar_dataframe_transaccional(df_mock)
+    from etl.etl_pipeline import cargar_dataframe
+
+    resumen["registros_cargados_bd"] = cargar_dataframe(df_mock, "Demo")
+
+    print(f"[+] Carga completada exitosamente. Resumen: {resumen}")
+    return resumen
+
+
+if __name__ == "__main__":
+    init_db()
+    inicializar_demo_y_cargar_bd(1250)
