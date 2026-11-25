@@ -871,176 +871,27 @@ def ejecutar_etl_carga_masiva(
 
 
 def limpiar_base_datos() -> None:
-    """Vacía las cuatro dimensiones y la tabla de hechos en orden compatible con sus FK."""
-    init_db()
-    with get_db_session() as session:
-        for model in (FactReservasRestaurantes, DimTiempo, DimAtencion, DimServicio, DimHotel):
-            session.query(model).delete(synchronize_session=False)
+    """Vacía las tablas de reservas y dimensiones en una operación eficiente."""
+    engine = get_engine()
+    init_db(engine)
 
-
-# =====================================================================
-# GENERADOR DE DATOS MOCK HIPER-REALISTAS (DEMO INICIAL Y PRUEBAS)
-# =====================================================================
-
-def generar_datos_mock(num_registros: int = 1200, dias_atras: int = 30, dias_adelante: int = 14) -> pd.DataFrame:
-    """
-    Genera un conjunto de datos sintéticos con las columnas exactas del sistema de Bahía Príncipe:
-    ['Remarks', 'Actions', 'Cargado', 'Obs.', 'Cross', 'Atención', '#Adultos', '#Niños',
-     '#Bebés', 'Nº Habs. Invitadas', 'Fecha Servicio', 'Servicio', 'Turno', 'Horario',
-     'Id', 'Usuario', 'Origen', 'Hotel', 'Hotel Res.']
-    """
-    random.seed(42)
-    np.random.seed(42)
-
-    fecha_base = date.today()
-    fecha_inicio = fecha_base - timedelta(days=dias_atras)
-    fecha_fin = fecha_base + timedelta(days=dias_adelante)
-    delta_dias = (fecha_fin - fecha_inicio).days
-
-    rest_ids = [r["id_restaurante"] for r in RESTAURANTES_CATALOGO]
-    rest_dict = {r["id_restaurante"]: r for r in RESTAURANTES_CATALOGO}
-
-    hoteles_codigos = ["BPG", "AP3", "TOI", "BPS", "BPB"]
-    hotel_id_to_cod = {1: "BPG", 4: "AP3", 10: "TOI", 16: "BPS", 21: "BPB"}
-
-    atenciones_prob = [
-        ("STANDARD", 0.62),
-        ("VIP1", 0.05),
-        ("VIP2", 0.06),
-        ("GEB06", 0.04),
-        ("ATE01", 0.12),
-        ("CLUB_GOLDEN", 0.05),
-        ("HONEYMOON", 0.04),
-        ("CUMPLEANOS", 0.02)
-    ]
-    atenciones_nombres = [a[0] for a in atenciones_prob]
-    atenciones_weights = [a[1] for a in atenciones_prob]
-
-    remarks_pool = [
-        "Mesa cerca de ventana con vista a jardín.",
-        "Cliente celíaco - requiere menú sin gluten.",
-        "Alergia severa a cacahuates y frutos secos.",
-        "Celebración de Aniversario de Bodas #25.",
-        "Solicitan periquera para bebé y espacio para carriola.",
-        "Cliente VIP Grand Bahia - botella de espumoso de cortesía.",
-        "Mesa tranquila alejada del show de teppanyaki.",
-        "Familia con 2 niños, favor de atender con prontitud.",
-        "Huésped repetidor Bahia Privilege Club.",
-        ""
-    ]
-
-    records = []
-    base_id = 745000
-
-    for i in range(num_registros):
-        res_id = base_id + i
-        # Fecha aleatoria ponderada
-        dia_offset = random.randint(0, delta_dias)
-        f_serv = fecha_inicio + timedelta(days=dia_offset)
-
-        # Seleccionar restaurante
-        rest_id = random.choice(rest_ids)
-        hotel_rest_id = rest_dict[rest_id]["id_hotel_ubicacion"]
-        hotel_rest_cod = hotel_id_to_cod[hotel_rest_id]
-
-        # Simular Cross-Dining (30% de probabilidad de que el cliente provenga de otro hotel)
-        es_cross = random.random() < 0.30
-        if es_cross:
-            otros_hoteles = [h for h in hoteles_codigos if h != hotel_rest_cod]
-            hotel_res_cod = random.choice(otros_hoteles)
+    with get_db_session(engine) as session:
+        if engine.dialect.name == "postgresql":
+            session.execute(text("""
+                TRUNCATE TABLE
+                    fact_reservas_restaurantes,
+                    dim_tiempo,
+                    dim_atencion,
+                    dim_servicio,
+                    dim_hotel
+                RESTART IDENTITY
+            """))
         else:
-            hotel_res_cod = hotel_rest_cod
-
-        # Turno y Horario (Turno 2 tiene mayor demanda - Hora Pico)
-        turno_rnd = random.choices([1, 2, 3], weights=[0.30, 0.50, 0.20])[0]
-        if turno_rnd == 1:
-            horario = random.choice(["17:30 - 19:00", "18:00 - 19:30"])
-        elif turno_rnd == 2:
-            horario = random.choice(["19:30 - 21:00", "20:00 - 21:30"])
-        else:
-            horario = random.choice(["21:30 - 23:00", "22:00 - 23:30"])
-
-        # Tamaño de Grupo (55% parejas, 35% familias con niños, 10% grupos grandes)
-        tipo_grupo = random.choices(["pareja", "familia", "grupo"], weights=[0.55, 0.35, 0.10])[0]
-        if tipo_grupo == "pareja":
-            adultos = 2
-            ninos = 0
-            bebes = 1 if random.random() < 0.08 else 0
-        elif tipo_grupo == "familia":
-            adultos = random.choice([2, 3, 4])
-            ninos = random.choice([1, 2, 3])
-            bebes = 1 if random.random() < 0.25 else 0
-        else:
-            adultos = random.randint(5, 8)
-            ninos = random.randint(0, 2)
-            bebes = 0
-
-        # Atención
-        atencion = random.choices(atenciones_nombres, weights=atenciones_weights)[0]
-
-        # Remarks & Periquera
-        obs = random.choice(remarks_pool)
-        if bebes > 0 and "periquera" not in obs.lower():
-            obs = "Requiere periquera para bebé. " + obs
-
-        usuario = f"recep_{random.randint(10, 85)}"
-        origen = random.choice(["APP_EXPERIENCE", "TOTEM_LOBBY", "CONCIERGE", "WEB_DIRECT"])
-
-        record = {
-            "Id": res_id,
-            "Fecha Servicio": f_serv.strftime("%Y-%m-%d"),
-            "Servicio": rest_id,
-            "Turno": turno_rnd,
-            "Horario": horario,
-            "Hotel": hotel_rest_cod,
-            "Hotel Res.": hotel_res_cod,
-            "Cross": "TRUE" if es_cross else "FALSE",
-            "Atención": atencion,
-            "#Adultos": adultos,
-            "#Niños": ninos,
-            "#Bebés": bebes,
-            "Nº Habs. Invitadas": 0 if random.random() > 0.15 else random.choice([1, 2]),
-            "Remarks": obs,
-            "Obs.": obs,
-            "Actions": "CONFIRMED",
-            "Cargado": "SI",
-            "Usuario": usuario,
-            "Origen": origen
-        }
-        records.append(record)
-
-    df_mock = pd.DataFrame(records)
-    return df_mock
-
-
-def inicializar_demo_y_cargar_bd(num_registros: int = 1250) -> Dict[str, Any]:
-    """
-    Puebla la base de datos con un dataset demo completo y genera archivos de muestra
-    ('sample_reservas.csv' y 'sample_reservas.xlsx') para facilitar pruebas inmediatas.
-    """
-    print(f"[*] Generando {num_registros} registros sintéticos para demostración...")
-    df_mock = generar_datos_mock(num_registros=num_registros)
-
-    # Guardar copias locales en CSV y Excel para pruebas de carga
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(base_dir, "sample_reservas.csv")
-    xlsx_path = os.path.join(base_dir, "sample_reservas.xlsx")
-
-    df_mock.to_csv(csv_path, index=False, encoding="utf-8")
-    df_mock.to_excel(xlsx_path, index=False, engine="openpyxl")
-    print(f"[+] Archivos de prueba generados:\n    - {csv_path}\n    - {xlsx_path}")
-
-    # Ejecutar ETL y cargar en BD
-    print("[*] Ejecutando ETL y cargando en Esquema en Estrella...")
-    df_transformado, resumen = transformar_dataframe_transaccional(df_mock)
-    from etl.etl_pipeline import cargar_dataframe
-
-    resumen["registros_cargados_bd"] = cargar_dataframe(df_mock, "Demo")
-
-    print(f"[+] Carga completada exitosamente. Resumen: {resumen}")
-    return resumen
-
-
-if __name__ == "__main__":
-    init_db()
-    inicializar_demo_y_cargar_bd(1250)
+            for model in (
+                FactReservasRestaurantes,
+                DimTiempo,
+                DimAtencion,
+                DimServicio,
+                DimHotel,
+            ):
+                session.query(model).delete(synchronize_session=False)
