@@ -667,7 +667,7 @@ with st.sidebar:
                     st.error(f"❌ Error en la carga masiva: {e}")
 
         with st.expander("Herramientas internas", expanded=False):
-        st.caption("Acciones de mantenimiento de la base de datos.")
+            st.caption("Acciones de mantenimiento de la base de datos.")
 
         if st.button("🗑️ Vaciar BD", use_container_width=True):
             from etl_pipeline import limpiar_base_datos
@@ -684,6 +684,8 @@ with st.sidebar:
         db_url_str = get_database_url()
         tipo_bd = "PostgreSQL Local" if "localhost" in db_url_str or "127.0.0.1" in db_url_str else ("PostgreSQL Cloud" if "postgresql" in db_url_str else "SQLite Local")
         st.caption(f"Origen: {tipo_bd} · {len(df_master):,} reservas cargadas")
+
+    
     st.markdown("---")
     st.caption("Ajusta cada análisis por separado desde los filtros dentro de cada apartado.")
 
